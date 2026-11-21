@@ -6,7 +6,7 @@ import type { GameShip } from './items';
 import type { Labels } from './labels';
 import type { LoanerMatrix } from './loaners';
 import type { OrgCache } from './orgs';
-import type { Goal, SavedChain } from './ccu';
+import type { Goal, OpenedLeg, PlanOptions, SavedChain, Step } from './ccu';
 import type { BuybackToken } from './buyback-token';
 import type { BuybackItem, Credits, Pledge } from './hangar';
 import type { Catalog, PaintCatalog, SaleHistory, StoreListing } from './store';
@@ -170,6 +170,23 @@ export const buybackItem = storage.defineItem<{ at: number; items: BuybackItem[]
 export const ordersItem = storage.defineItem<{ at: number; orders: import('./orders').Order[]; subs?: import('./orders').SubPayment[]; pages: number } | null>(acct('local:orders'), { fallback: null, version: 2, migrations: { 2: () => null } });
 /** Saved CCU chains (planner): the CCUs they use are kept out of new plans when *Exclude saved chains* is on. */
 export const ccuChainsItem = storage.defineItem<SavedChain[]>(acct('local:ccuChains'), { fallback: [] });
+/**
+ * CCU planner as you left it: source / target, options, the chain opened from *My chains*, and the route on screen
+ * (`steps`, kept on the next load while nothing better is on sale — `stickTo`).
+ */
+export interface CcuView {
+  mode: 'store' | 'hangar' | 'any';
+  fromId: number | null;
+  toId: number | null;
+  opt: PlanOptions;
+  excludeSaved: boolean;
+  ltiOnly: boolean;
+  targetOwned: boolean;
+  chainName: string;
+  openedLeg: OpenedLeg | null;
+  steps: { startId: number; targetId: number; steps: Step[] } | null;
+}
+export const ccuViewItem = storage.defineItem<CcuView | null>(acct('local:ccuView'), { fallback: null });
 /** Your labels on pledges (`lib/labels.ts`): pledge id → labels. */
 export const pledgeLabelsItem = storage.defineItem<Labels>(acct('local:pledgeLabels'), { fallback: {} });
 /** Fleet plan (CCU planner, several goals): the goals in priority order, hulls never / preferably auto-upgraded, store start allowed. */
@@ -250,7 +267,7 @@ export const starorgSyncItem = storage.defineItem<import('./starorg').StarOrgSyn
 /** Saved RSI logins for the account switcher (this context's cookie jar only — incognito has its own list). */
 export const profilesItem = storage.defineItem<Profiles>(acct('local:profiles'), { fallback: { active: null, list: [] } });
 /** Everything that belongs to one RSI account: swapped out / in with the cookies when switching profiles. */
-export const ACCOUNT_ITEMS = [readItem, watchesItem, feedItem, friendNotesItem, presenceItem, seenRequestsItem, hangarItem, buybackItem, ordersItem, conciergeItem, storeItemsItem, ccuChainsItem, ccuGoalsItem, gameShipsItem, pledgeLabelsItem, partyModeItem, partyLogItem, lastPollItem] as const;
+export const ACCOUNT_ITEMS = [readItem, watchesItem, feedItem, friendNotesItem, presenceItem, seenRequestsItem, hangarItem, buybackItem, ordersItem, conciergeItem, storeItemsItem, ccuChainsItem, ccuViewItem, ccuGoalsItem, gameShipsItem, pledgeLabelsItem, partyModeItem, partyLogItem, lastPollItem] as const;
 /** Key for a profile's parked account data (`local:profileData.<id>`, incognito-prefixed like the rest). */
 export const profileDataKey = (id: string) => acct(`local:profileData.${id}`);
 

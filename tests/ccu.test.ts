@@ -669,3 +669,32 @@ describe('my chains: the saved list planned together', () => {
     expect(plan(ships, [own(1, 3, 5, { source: 'buyback', price: 1000 })], 1, 3, o({ useOwned: false, buyback: true }))!.steps[0]!.kind).toBe('buyback');
   });
 });
+
+describe('a known route is kept while today has nothing better', () => {
+  // Aurora → T two ways that cost the same: via M1 (1500 + 5000) or via M2 (2500 + 4000).
+  const M1 = ship(11, 'M1', 5000, [sku('Warbond Edition', 4000, { id: 111 })]);
+  const M2 = ship(12, 'M2', 6000, [sku('Warbond Edition', 5000, { id: 112 })]);
+  const T = ship(13, 'T', 10000, [sku('Standard Edition', 10000, { id: 113 })]);
+  const fleetVia = (all: CatalogShip[], keepVia: number) => {
+    const first = planFleet(all, [], [{ id: 'g', fromId: 1, targetId: 13, via: [keepVia] }], o({}), { hulls: [{ id: 1, count: 1 }] }).legs[0]!.plan!;
+    expect(first.steps.map((s) => s.toId)).toEqual([keepVia, 13]);
+    return planFleet(all, [], [{ id: 'g', fromId: 1, targetId: 13, via: [], keep: { startId: 1, steps: first.steps } }], o({}), { hulls: [{ id: 1, count: 1 }] }).legs[0]!.plan!;
+  };
+  it('a tie keeps last time’s route, whatever order the store lists ships in', () => {
+    for (const all of [[A, M1, M2, T], [A, M2, M1, T]]) {
+      expect(fleetVia(all, 11).steps.map((s) => s.toId)).toEqual([11, 13]);
+      expect(fleetVia(all, 12).steps.map((s) => s.toId)).toEqual([12, 13]);
+    }
+  });
+  it('a strictly better route today replaces it', () => {
+    const cheaper = ship(12, 'M2', 6000, [sku('Warbond Edition', 4500, { id: 112 })]);
+    const p = fleetVia([A, M1, cheaper, T], 11);
+    expect(p.steps.map((s) => s.toId)).toEqual([12, 13]);
+    expect(p.total).toBe(6000);
+  });
+  it('chainGoal carries the saved steps as the route to keep', () => {
+    const c = { id: 'c', name: 'x', at: 0, startId: 1, targetId: 13, steps: [{ fromId: 1, toId: 12 }], total: 0, cash: 0, opt: o({}) } as unknown as SavedChain;
+    expect(chainGoal(c).keep).toEqual({ startId: 1, steps: c.steps });
+    expect(chainGoal({ ...c, steps: [] }).keep).toBeUndefined();
+  });
+});

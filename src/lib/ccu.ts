@@ -618,6 +618,8 @@ export interface Goal {
   lti?: 'any' | 'prefer' | 'only';
   /** This goal's own options (a chain of *My chains*); unset = the plan-wide ones. Its `via` is `via` above. */
   opt?: PlanOptions;
+  /** The route planned last time (a saved chain's steps): kept while today's best is no better (`stickTo`). */
+  keep?: { startId: number; steps: Step[] };
 }
 export interface FleetLeg {
   goal: Goal;
@@ -654,13 +656,27 @@ export interface FleetOptions {
 }
 
 /** Auto source choice: most saved vs MSRP (a wait counts `WAIT_RISK` against it), then least to pay now, then fewest waits: > 0 when `a` wins, 0 on a tie. */
-const better = (a: Plan, b: Plan): number => {
+export const better = (a: Plan, b: Plan): number => {
   const sa = a.savings - a.waits * WAIT_RISK;
   const sb = b.savings - b.waits * WAIT_RISK;
   if (sa !== sb) return sa > sb ? 1 : -1;
   if (a.total - a.later !== b.total - b.later) return a.total - a.later < b.total - b.later ? 1 : -1;
   return a.waits === b.waits ? 0 : a.waits < b.waits ? 1 : -1;
 };
+
+/** The hulls a chain passes through (not its source or target), in order. */
+export const chainHulls = (steps: Step[]): number[] => steps.slice(0, -1).map((s) => s.toId);
+/**
+ * Keep a known route unless today's best is strictly better. `prev` = the steps planned last time; `replan(via)` plans
+ * the same route again through those hulls, on today's prices. Plans tie often (same saving, same waits): without
+ * this, which of two equal routes wins flips with the order RSI lists ships and CCUs in, and a saved chain or the
+ * planner shows another route on every load.
+ */
+export function stickTo(fresh: Plan | null, prev: Step[] | null | undefined, replan: (via: number[]) => Plan | null): Plan | null {
+  if (!fresh || !prev?.length) return fresh;
+  const kept = replan(chainHulls(prev));
+  return kept && better(fresh, kept) <= 0 ? kept : fresh;
+}
 
 /**
  * Plans several goals together, in the given order (= priority): each goal's chain may not reuse an owned / buyback
@@ -725,6 +741,7 @@ export function planFleet(ships: CatalogShip[], owned: OwnedCcu[], goals: Goal[]
     const ltiFirst = goal.lti === 'prefer' && goal.fromId == null;
     const isLti = (c: number) => (free.get(c)?.lti ?? 0) > 0;
     const groups = (ltiFirst ? [cands.filter(isLti), cands.filter((c) => !isLti(c))] : [cands]).flatMap((g) => [g.filter((c) => pref.has(c)), g.filter((c) => !pref.has(c))]);
+    let won: { pass: PlanOptions; group: number[] } | null = null;
     search: for (const pass of o.planAhead ? [o] : [o, { ...o, planAhead: true }]) {
       for (const group of groups) {
         for (const c of group) {
@@ -736,9 +753,17 @@ export function planFleet(ships: CatalogShip[], owned: OwnedCcu[], goals: Goal[]
         }
         if (best) {
           ahead = pass !== o;
+          won = { pass, group };
           break search;
         }
       }
+    }
+    // Last time's route, when its source is still one this pass may use and today's best is no better.
+    const k = goal.keep;
+    if (won && best && k && won.group.includes(k.startId)) {
+      const pass = won.pass;
+      const kept = stickTo(best, k.steps, (via) => plan(ships, owned, k.startId, goal.targetId, { ...pass, via: [...new Set([...(pass.via ?? []), ...via])] }, graphOf(pass)));
+      if (kept !== best) (best = kept), (startId = k.startId);
     }
     let lti = claimed.get(goal.id) ?? false;
     if (goal.fromId == null && best && startId != null && startId !== STORE_START) lti = take(startId, goal);
@@ -760,6 +785,7 @@ export const chainGoal = (c: SavedChain): Goal => ({
   ...(c.storeStart !== undefined ? { storeStart: c.storeStart } : {}),
   ...(c.lti ? { lti: c.lti } : {}),
   opt: c.opt,
+  ...(c.steps.length ? { keep: { startId: c.startId, steps: c.steps } } : {}),
 });
 
 /** Every saved chain planned together, in list order (leg `i` is chain `i`). `exclude`: CCUs no chain may use. */
