@@ -6,6 +6,8 @@ updated: 2026-11-21
 # Changelog
 
 ## Unreleased
+
+## 0.25.0 — 2026-11-21
 - CCU planner: remembers where you left it (source, target, options, the chain opened from *My chains*) across reloads.
 - CCU planner and My chains: a chain no longer switches to another route of the same price on each load. The route you have is kept until today's store has a strictly better one; opening a chain from *My chains* shows the route the list has.
 - Limited waves: the page leaves the sidebar a day after the event's last wave, also in a hub left open (it stayed until the hub was reloaded).
