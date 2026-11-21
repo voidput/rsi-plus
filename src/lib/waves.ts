@@ -44,9 +44,9 @@ export interface WaveEvent {
 export const WAVE_EVENTS: WaveEvent[] = [{ id: 'iae-2956', name: 'IAE 2956', sales: IAE_2956 }];
 /** How long after a wave opens it still counts as "on" (stock may last minutes on the late waves). */
 export const WAVE_OPEN_MS = 15 * 60_000;
-/** The page shows up this long before an event's first wave and goes once its last wave has closed. */
+/** The page shows up this long before an event's first wave and stays this long after its last. */
 export const EVENT_LEAD_MS = 7 * 86_400_000;
-export const EVENT_TAIL_MS = WAVE_OPEN_MS;
+export const EVENT_TAIL_MS = 86_400_000;
 /** The event with waves going on (or about to start) now; null between events. */
 export function activeWaveEvent(now: number, events: readonly WaveEvent[] = WAVE_EVENTS): WaveEvent | null {
   for (const e of events) {

@@ -34,7 +34,7 @@
 
   // ---- which sale ----
   const allSales = IAE_2956.map((s) => ({ ...s, times: waveTimes(s.date) }));
-  /** A sale day leaves the list once its last wave has closed. */
+  /** A sale day leaves the list a day after its last wave. */
   const sales = $derived(allSales.filter((s) => now < s.times.at(-1)! + EVENT_TAIL_MS));
   const live = $derived(sales.filter((s) => now < s.times.at(-1)! + WAVE_OPEN_MS));
   let pick = $state<string | null>(null);

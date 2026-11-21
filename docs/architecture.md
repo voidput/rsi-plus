@@ -341,7 +341,7 @@ Optional one-click hangar sync to [StarOrg Tools](https://starorg.tools). Opt-in
 
 ## Limited waves
 
-- `lib/waves.ts`: `WAVE_EVENTS` (one entry per sale event with stock-limited waves; today IAE 2956 — six waves per hull, four hours apart, from 16:00 UTC on the sale date), `waveTimes`, `currentWave`, `countdown`, `watchEveryMs` (how often the listing is read: every 4 s from T−45 s to T+3 min, slower around it, never more than 5 min out), `matchListings`, `activeWaveEvent` (7 days before the first wave until the last wave's 15 min window closes) and `wavesShown` (that, and the Settings switch).
+- `lib/waves.ts`: `WAVE_EVENTS` (one entry per sale event with stock-limited waves; today IAE 2956 — six waves per hull, four hours apart, from 16:00 UTC on the sale date), `waveTimes`, `currentWave`, `countdown`, `watchEveryMs` (how often the listing is read: every 4 s from T−45 s to T+3 min, slower around it, never more than 5 min out), `matchListings`, `activeWaveEvent` (7 days before the first wave to 1 day after the last) and `wavesShown` (that, and the Settings switch).
 - `WavesPanel` (`#waves`, Plan group): schedule, countdown on RSI's clock (the `Date` header of the store answer), ready check, stock watch (`fetchShipListings`, standalone ships with the warbond flag), add to cart. A sale day leaves the list a day after its last wave. RSI+ never places an order.
 - Sidebar: the entry is listed only while `wavesShown` (Hub filters it like the Spectrum-only pages, re-checked each minute). Settings → Integrations → *Limited waves* writes `wavesItem.on` (`local:waves`, absent = on).
 - Background: `scheduleWaves` sets one alarm per armed sale, wave and lead time (`WAVE_LEADS`: 30, 5, 1 min); none while `wavesShown` is false.

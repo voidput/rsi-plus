@@ -8,7 +8,7 @@ updated: 2026-11-21
 ## Unreleased
 - CCU planner: remembers where you left it (source, target, options, the chain opened from *My chains*) across reloads.
 - CCU planner and My chains: a chain no longer switches to another route of the same price on each load. The route you have is kept until today's store has a strictly better one; opening a chain from *My chains* shows the route the list has.
-- Limited waves: the page leaves the sidebar as soon as the last wave of the event has closed (was a day later), also in a hub left open.
+- Limited waves: the page leaves the sidebar a day after the event's last wave, also in a hub left open (it stayed until the hub was reloaded).
 
 ## 0.24.0 — 2026-11-21
 - Store changes and Ship catalog: a ship you hold a CCU to counts as owned: its tiles go green with *CCU owned* (and *Dismiss owned* takes them), and the catalog's *Ships I own* filter includes it.
