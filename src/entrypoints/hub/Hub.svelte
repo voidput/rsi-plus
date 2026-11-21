@@ -139,12 +139,16 @@
     getSettings().then(apply);
     return settingsItem.watch(async () => apply(await getSettings()));
   });
-  // Limited waves: the page is listed only during an event with waves, and only while Settings has it on.
+  // Limited waves: the page is listed only during an event with waves, and only while Settings has it on. Re-checked
+  // each minute, so an open hub drops the entry once the last wave closes.
   let wavesOn = $state(false);
   $effect(() => {
-    const apply = (v: { on?: boolean } | null) => (wavesOn = wavesShown(v, Date.now()));
+    let last: { on?: boolean } | null = null;
+    const apply = (v: { on?: boolean } | null) => ((last = v), (wavesOn = wavesShown(v, Date.now())));
     wavesItem.getValue().then(apply);
-    return wavesItem.watch(apply);
+    const off = wavesItem.watch(apply);
+    const t = setInterval(() => (wavesOn = wavesShown(last, Date.now())), 60_000);
+    return () => (off(), clearInterval(t));
   });
   const groups = $derived(HUB_GROUPS.map((g) => ({ ...g, items: g.items.filter((it) => (spectrumTools || !SPECTRUM_ONLY.has(it.tab)) && (issueCouncil || it.tab !== 'issues') && (wavesOn || it.tab !== 'waves')) })));
   const navItems = $derived([...groups.flatMap((g) => g.items), SETTINGS_PAGE]);
