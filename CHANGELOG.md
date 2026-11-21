@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.25.0](https://github.com/voidput/rsi-plus/compare/v0.24.0...v0.25.0) (2026-11-21)
+
+
+### Features
+
+* **ccu:** planner remembers its state across reloads; a chain keeps its route until a strictly better one is on sale ([a275a63](https://github.com/voidput/rsi-plus/commit/a275a63af21d3b72f995d8a6495a59c26635509e))
+
+
+### Bug Fixes
+
+* **waves:** keep the page a day after the last wave; an open hub still re-checks each minute ([7630bd8](https://github.com/voidput/rsi-plus/commit/7630bd8012b0e46b725131f440565f5004c6a7bb))
+* **waves:** the Limited waves page leaves the sidebar once the last wave closes, also in an open hub ([07e53c1](https://github.com/voidput/rsi-plus/commit/07e53c11761e9648aa816b2f64cb2614e82d61fb))
+
 ## [0.24.0](https://github.com/voidput/rsi-plus/compare/v0.23.0...v0.24.0) (2026-11-21)
 
 
