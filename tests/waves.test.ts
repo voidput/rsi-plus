@@ -16,6 +16,8 @@ describe('limited waves', () => {
     expect(wavesShown({ on: false }, first)).toBe(false);
     expect(wavesShown({}, first)).toBe(true);
     expect(wavesShown({}, last + 2 * 86_400_000)).toBe(false);
+    expect(wavesShown({}, last + 86_400_000 - 1)).toBe(true); // a day after the last wave
+    expect(wavesShown({}, last + 86_400_000)).toBe(false);
   });
   it('the wave to care about: the open one, else the next, null when over', () => {
     const t = waveTimes('2026-11-14');

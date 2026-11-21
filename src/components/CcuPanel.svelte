@@ -3,10 +3,10 @@
   import { createCartLedger } from '@/lib/cart-ui.svelte';
   import { transient } from '@/lib/flash.svelte';
   import { lastSaleLabel, shipName, uid } from '@/lib/ccu-ui';
-  import { applyAlternative, DEFAULT_PLAN_OPTIONS, savedVsMsrp, farthestReachable, ownedCcus, ownedHulls, ownedShips, plan, planGraph, plannerExclude, reservedRefs, STORE_START, type Objective, type OpenedLeg, type PlanOptions, type SavedChain, type Step } from '@/lib/ccu';
+  import { applyAlternative, DEFAULT_PLAN_OPTIONS, savedVsMsrp, farthestReachable, ownedCcus, ownedHulls, ownedShips, plan, planGraph, plannerExclude, reservedRefs, stickTo, STORE_START, type Objective, type OpenedLeg, type PlanOptions, type SavedChain, type Step } from '@/lib/ccu';
   import { hangarState, hangarUrl } from '@/lib/hangar';
   import { bg } from '@/lib/messages';
-  import { buybackItem, catalogItem, ccuChainsItem, hangarItem, pledgeLabelsItem, priceHistoryItem, saleHistoryItem, storeItemsItem } from '@/lib/settings';
+  import { buybackItem, catalogItem, ccuChainsItem, ccuViewItem, hangarItem, pledgeLabelsItem, priceHistoryItem, saleHistoryItem, storeItemsItem } from '@/lib/settings';
   import { withArchive, withExpected, type PriceHistory } from '@/lib/price-history';
   import { cleanLabels, idsWith, KEEP, PREFER, type Labels } from '@/lib/labels';
   import { refreshHangar, type HangarProgress } from '@/lib/hangar-refresh';
@@ -83,6 +83,10 @@
   /** A chain of *My chains* opened here (`openChain`): planned without the CCUs the chains above it took. */
   let openedLeg = $state<OpenedLeg | null>(null);
   let chainName = $state('');
+  /** The planner as left last time is back (`ccuViewItem`): until then nothing is saved, and no hash link applied over it. */
+  let viewLoaded = $state(false);
+  /** The route to keep for this source → target (last time's, or the opened chain's) while nothing better is on sale. */
+  let stick = $state<{ startId: number; targetId: number; steps: Step[] } | null>(null);
   /** Name of the chain just saved, shown for a moment. */
   const saved = transient(2500);
 
@@ -132,7 +136,7 @@
   // A shared route in the hash (`#ccu?from=…&to=…`, `lib/ccu-link.ts`): applied once the catalog is in, and on every hash change.
   const catalogReady = $derived(ships.length > 0);
   $effect(() => {
-    if (!catalogReady) return;
+    if (!catalogReady || !viewLoaded) return;
     return watchCcuLink((l) => untrack(() => applyLink(l)));
   });
   /** A chain code / link → the planner on screen (ids checked against the catalog). */
@@ -164,7 +168,8 @@
   /** Standalones on sale now that come with LTI (counted on the catalog, so a sold-out listing doesn't count). */
   const ltiStarts = $derived(ships.reduce((n, s) => n + s.standalone.filter((k) => k.available && skuInsurance.get(k.id) === 'LTI').length, 0));
   $effect(() => {
-    if (ltiOnly && mode === 'hangar' && fromId != null && !ltiSet.has(fromId)) fromId = null;
+    // Only once the hangar is in: before that no hull is known to be LTI, and a restored source would be dropped.
+    if (hangar && ltiOnly && mode === 'hangar' && fromId != null && !ltiSet.has(fromId)) fromId = null;
   });
   let stopPick = $state<number | null>(null);
   /** The target picker hides ships you already own unless asked. */
@@ -188,11 +193,16 @@
   const graphNow = $derived(planGraph(ships, ccus.owned, effective));
   const aheadOpt = $derived<PlanOptions>({ ...effective, planAhead: true });
   const graphAhead = $derived(planGraph(ships, ccus.owned, aheadOpt));
+  const stickSteps = $derived(stick && stick.startId === startId && stick.targetId === toId ? stick.steps : null);
   const planned = $derived.by(() => {
     if (startId == null || toId == null) return { result: null, ahead: false };
-    const r = plan(ships, ccus.owned, startId, toId, effective, graphNow);
+    const s = startId;
+    const t = toId;
+    // Today's best, unless last time's route (through the same hulls, at today's prices) is as good.
+    const best = (o: PlanOptions, g: typeof graphNow) => stickTo(plan(ships, ccus.owned, s, t, o, g), stickSteps, (via) => plan(ships, ccus.owned, s, t, { ...o, via: [...new Set([...(o.via ?? []), ...via])] }, g));
+    const r = best(effective, graphNow);
     if (r || effective.planAhead) return { result: r, ahead: false };
-    const a = plan(ships, ccus.owned, startId, toId, aheadOpt, graphAhead);
+    const a = best(aheadOpt, graphAhead);
     return { result: a, ahead: !!a };
   });
   const result = $derived(planned.result);
@@ -414,6 +424,34 @@
    * without them.
    */
   const plansReady = $derived(chainsLoaded && buybackLoaded && ships.length > 0 && hangarState(hangar) === 'complete' && !hangarLoading && buyback?.complete !== false);
+  // ---- the planner as you left it (`ccuViewItem`): restored once, saved on every change ----
+  $effect(() => {
+    untrack(() =>
+      ccuViewItem.getValue().then((v) => {
+        if (v) {
+          mode = v.mode;
+          fromId = v.fromId;
+          toId = v.toId;
+          opt = { ...DEFAULT_PLAN_OPTIONS, ...v.opt, include: [...(v.opt.include ?? [])], exclude: [...(v.opt.exclude ?? [])], via: [...(v.opt.via ?? [])], skip: [...(v.opt.skip ?? [])] };
+          excludeSaved = v.excludeSaved;
+          ltiOnly = v.ltiOnly;
+          targetOwned = v.targetOwned;
+          chainName = v.chainName;
+          openedLeg = v.openedLeg;
+          stick = v.steps;
+        }
+        viewLoaded = true;
+      }),
+    );
+  });
+  $effect(() => {
+    if (!viewLoaded) return;
+    // The route on screen is kept only once it is planned on complete data (a hangar still loading has no CCUs yet).
+    const steps = plansReady && result && startId != null && toId != null ? { startId, targetId: toId, steps: $state.snapshot(result.steps) as Step[] } : $state.snapshot(stick);
+    const v = { mode, fromId, toId, opt: $state.snapshot(opt) as PlanOptions, excludeSaved, ltiOnly, targetOwned, chainName, openedLeg: $state.snapshot(openedLeg), steps };
+    const t = setTimeout(() => void ccuViewItem.setValue(JSON.parse(JSON.stringify(v))), 300);
+    return () => clearTimeout(t);
+  });
   const openedChain = $derived(openedLeg?.chainId ? (chains.find((c) => c.id === openedLeg!.chainId) ?? null) : null);
   /** The options a chain keeps: yours (not the CCUs other chains hold), with Plan ahead on when that is how it was planned. */
   const ownOpt = (): PlanOptions => ({ ...$state.snapshot(opt), ...(planned.ahead ? { planAhead: true } : {}) });
@@ -495,6 +533,8 @@
     opt = { ...DEFAULT_PLAN_OPTIONS, ...$state.snapshot(c.opt), include: [...c.opt.include], exclude: [...c.opt.exclude], via: [...(c.opt.via ?? [])], skip: [...(c.opt.skip ?? [])] };
     chainName = c.name;
     openedLeg = { startId: start, targetId: c.targetId, exclude: [...exclude], chainId: c.id };
+    // Show the chain as My chains has it, not another route of the same price.
+    stick = c.steps.length ? { startId: start, targetId: c.targetId, steps: $state.snapshot(c.steps) as Step[] } : null;
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
   // ---- Your CCUs: show hangar / buyback, sort by any column, exclude or reset everything shown ----
