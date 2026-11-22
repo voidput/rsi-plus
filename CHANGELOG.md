@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.26.0](https://github.com/voidput/rsi-plus/compare/v0.25.0...v0.26.0) (2026-11-22)
+
+
+### Features
+
+* **labels:** Original concept / Original pledge presets; a labelled upgraded pledge says melting buys it back as bought ([9ee6270](https://github.com/voidput/rsi-plus/commit/9ee6270543488a05cc0a98ea12bdec52485049d4))
+
+
+### Bug Fixes
+
+* **hangar:** by-ship column widths follow the list's width (container queries), not the viewport ([1f5fffd](https://github.com/voidput/rsi-plus/commit/1f5fffd5e184a777a73a958918df976794fbca85))
+* **hangar:** by-ship columns narrower below 2xl so the pledge column keeps room and the page fits ([ecfdd73](https://github.com/voidput/rsi-plus/commit/ecfdd737abfa7e94a2224bbba807948bf7225f73))
+
 ## [0.25.0](https://github.com/voidput/rsi-plus/compare/v0.24.0...v0.25.0) (2026-11-21)
 
 
