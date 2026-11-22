@@ -819,17 +819,18 @@
 
 {#snippet cols()}
               <colgroup>
+                <!-- Fixed columns stay narrow below 2xl so the Pledge column (the flexible one) keeps room on smaller windows. -->
                 {#if melting}<col class="w-10" />{/if}
                 <col />
-                <col class="w-16" />
-                <col class="w-24" />
-                <col class="w-24" />
-                <col class="w-32" />
-                <col class="w-28" />
-                <col class="w-48" />
+                <col class="w-12 2xl:w-16" />
+                <col class="w-20 2xl:w-24" />
+                <col class="w-20 2xl:w-24" />
+                <col class="w-24 2xl:w-32" />
+                <col class="w-24 2xl:w-28" />
+                <col class="w-32 2xl:w-48" />
                 <col class="w-20" />
-                {#if melting}<col class="w-48" />{/if}
-                <col class="w-80" />
+                {#if melting}<col class="w-36 2xl:w-48" />{/if}
+                <col class="w-40 2xl:w-80" />
               </colgroup>
 {/snippet}
 

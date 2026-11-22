@@ -6,6 +6,7 @@ updated: 2026-11-21
 # Changelog
 
 ## Unreleased
+- Pledges, Group by ship: on smaller windows the pledge name column no longer collapses (names wrapping word by word, *Pledge* over *Qty*) and the page no longer runs off the right edge.
 
 ## 0.25.0 — 2026-11-21
 - CCU planner: remembers where you left it (source, target, options, the chain opened from *My chains*) across reloads.
