@@ -12,7 +12,7 @@
   import { bg } from '@/lib/messages';
   import { catalogItem, ccuChainsItem, gameShipsItem, hangarItem, paintCatalogItem, pledgeLabelsItem } from '@/lib/settings';
   import { STORE_START, type SavedChain } from '@/lib/ccu';
-  import { cleanLabels, idsWith, KEEP, labelsOf, MELT, type Labels } from '@/lib/labels';
+  import { cleanLabels, idsWith, KEEP, labelsOf, MELT, ORIGINAL, type Labels } from '@/lib/labels';
   import LabelEdit from './LabelEdit.svelte';
   import { matchShip, type Catalog, type StorePaint } from '@/lib/store';
   import { compare, dateValue, nextSort, sortBy, type SortState, type SortValue } from '@/lib/sort';
@@ -184,6 +184,8 @@
   const all = $derived(data?.pledges ?? []);
   /** Meltable pledges labelled *Melt* (one-click pick in the melt calculator). */
   const meltIds = $derived(idsWith(labels, MELT));
+  /** Pledges labelled *Original concept* / *Original pledge*: an upgraded one says melting buys it back as bought. */
+  const originalIds = $derived(idsWith(labels, ORIGINAL));
   const meltLabelled = $derived(all.filter((p) => meltIds.has(p.id) && canMelt(p)));
   /** Total pages while loading: the page's own pagination, else the last page a saved pledge came from. */
   const lastPage = $derived(all.reduce((m, p) => Math.max(m, p.page ?? 0), 0));
@@ -906,6 +908,9 @@
                             {#snippet trigger({ props })}<button type="button" {...props} class="text-muted-foreground cursor-default">(upgraded)</button>{/snippet}
                           </LazyTip>
                         </div>
+                      {/if}
+                      {#if s.entries.some((e) => originalIds.has(e.id))}
+                        <div class="text-muted-foreground text-xs">Melt → buyback returns {up?.from ?? 'it'} as bought (not upgraded); the CCUs come back on their own</div>
                       {/if}
                     {/if}
                     {#if p.items.length}

@@ -6,6 +6,7 @@ updated: 2026-11-21
 # Changelog
 
 ## Unreleased
+- Pledges: two new preset labels, *Original concept* and *Original pledge*, for an upgraded pledge worth having back as bought. A labelled upgraded pledge says that melting it buys back the original (not upgraded) with the CCUs on their own.
 - Pledges, Group by ship: on smaller windows the pledge name column no longer collapses (names wrapping word by word, *Pledge* over *Qty*) and the page no longer runs off the right edge.
 
 ## 0.25.0 — 2026-11-21

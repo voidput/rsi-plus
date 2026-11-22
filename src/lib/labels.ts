@@ -3,7 +3,9 @@
  * (pledge id → labels). A few preset labels drive the planners:
  * - `Keep`: never picked by the melt planners (dedupe / target) and its hull copy is never auto-upgraded by an auto chain (My chains);
  * - `LTI token`, `CCU fodder`: an auto chain upgrades these hulls first (like *Prefer to upgrade*);
- * - `Melt`: one click picks them in the melt calculator.
+ * - `Melt`: one click picks them in the melt calculator;
+ * - `Original concept`, `Original pledge`: an upgraded pledge worth having back as bought — melted, buyback returns the
+ *   original pledge (not upgraded) and each CCU on its own; the Pledges page says so on the row.
  * Any other text is a plain label for filtering. Comparison is case-insensitive; the first spelling used is kept.
  */
 export type Labels = Record<string, string[]>;
@@ -14,10 +16,14 @@ export const PRESET_LABELS: { name: string; hint: string }[] = [
   { name: 'Keep', hint: 'Never melted by the planners, never auto-upgraded by a chain' },
   { name: 'Melt', hint: 'Meant to be melted — one click picks them in the melt calculator' },
   { name: 'Gift', hint: 'Meant for someone else' },
+  { name: 'Original concept', hint: 'Bought at its concept sale (OC). Melted, buyback returns it as bought, not upgraded; the CCUs come back on their own' },
+  { name: 'Original pledge', hint: 'An upgraded pledge worth having back as it was. Melted, buyback returns the original, not upgraded; the CCUs come back on their own' },
 ];
 export const KEEP = 'keep';
 export const PREFER = ['lti token', 'ccu fodder'];
 export const MELT = 'melt';
+/** Labels marking a pledge you can melt and buy back as originally bought. */
+export const ORIGINAL = ['original concept', 'original pledge'];
 
 const norm = (l: string) => l.trim().replace(/\s+/g, ' ').toLowerCase();
 

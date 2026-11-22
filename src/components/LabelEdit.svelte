@@ -46,7 +46,7 @@
     if (pop) open = true;
   };
   /** Preset labels keep their colour; your own labels are plain outline. */
-  const TONE: Record<string, BadgeVariant> = { keep: 'success', 'lti token': 'warning', 'ccu fodder': 'info', melt: 'destructive' };
+  const TONE: Record<string, BadgeVariant> = { keep: 'success', 'lti token': 'warning', 'ccu fodder': 'info', melt: 'destructive', 'original concept': 'warning', 'original pledge': 'info' };
 </script>
 
 <div class="flex flex-wrap items-center gap-1">
