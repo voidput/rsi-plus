@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { allLabels, cleanLabels, hasLabel, idsWith, setLabel } from '@/lib/labels';
+import { allLabels, cleanLabels, hasLabel, idsWith, ORIGINAL, setLabel } from '@/lib/labels';
 
 describe('labels', () => {
   it('adds, removes, matches case-insensitively and keeps the first spelling', () => {
@@ -22,5 +22,12 @@ describe('labels', () => {
     expect(allLabels(broken).map((l) => l.name)).toEqual(['Keep', 'Melt', 'Main flyer']);
     expect(setLabel(broken, [1], 'Keep', false)).toEqual({ 1: ['Main flyer'], 2: ['Melt'] });
     expect([...idsWith(broken, 'keep')]).toEqual([1]);
+  });
+
+  it('original concept / original pledge presets keep their spelling and are found together', () => {
+    let l = setLabel({}, [7], 'original CONCEPT', true);
+    l = setLabel(l, [8], 'original pledge', true);
+    expect(l).toEqual({ 7: ['Original concept'], 8: ['Original pledge'] });
+    expect([...idsWith(l, ORIGINAL)].sort()).toEqual([7, 8]);
   });
 });

@@ -6,6 +6,8 @@ updated: 2026-11-21
 # Changelog
 
 ## Unreleased
+- Pledges: two new preset labels, *Original concept* and *Original pledge*, for an upgraded pledge worth having back as bought. A labelled upgraded pledge says that melting it buys back the original (not upgraded) with the CCUs on their own.
+- Pledges, Group by ship: the pledge name column no longer collapses (names wrapping word by word, *Pledge* over *Qty*) and the list no longer scrolls sideways when the page is narrow: the other columns size to the list's own width, not the window's.
 
 ## 0.25.0 — 2026-11-21
 - CCU planner: remembers where you left it (source, target, options, the chain opened from *My chains*) across reloads.

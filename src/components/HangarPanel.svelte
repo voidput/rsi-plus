@@ -12,7 +12,7 @@
   import { bg } from '@/lib/messages';
   import { catalogItem, ccuChainsItem, gameShipsItem, hangarItem, paintCatalogItem, pledgeLabelsItem } from '@/lib/settings';
   import { STORE_START, type SavedChain } from '@/lib/ccu';
-  import { cleanLabels, idsWith, KEEP, labelsOf, MELT, type Labels } from '@/lib/labels';
+  import { cleanLabels, idsWith, KEEP, labelsOf, MELT, ORIGINAL, type Labels } from '@/lib/labels';
   import LabelEdit from './LabelEdit.svelte';
   import { matchShip, type Catalog, type StorePaint } from '@/lib/store';
   import { compare, dateValue, nextSort, sortBy, type SortState, type SortValue } from '@/lib/sort';
@@ -184,6 +184,8 @@
   const all = $derived(data?.pledges ?? []);
   /** Meltable pledges labelled *Melt* (one-click pick in the melt calculator). */
   const meltIds = $derived(idsWith(labels, MELT));
+  /** Pledges labelled *Original concept* / *Original pledge*: an upgraded one says melting buys it back as bought. */
+  const originalIds = $derived(idsWith(labels, ORIGINAL));
   const meltLabelled = $derived(all.filter((p) => meltIds.has(p.id) && canMelt(p)));
   /** Total pages while loading: the page's own pagination, else the last page a saved pledge came from. */
   const lastPage = $derived(all.reduce((m, p) => Math.max(m, p.page ?? 0), 0));
@@ -694,6 +696,8 @@
     {@render pledgeTable(visible.slice(0, budget))}
     {#if budget < rowCount}<p class="text-muted-foreground text-xs" use:nearView={(v) => (near = v)}>… {rowCount - budget} more below</p>{/if}
   {:else}
+    <!-- A size container: the by-ship column widths (cols()) follow the list's own width, not the window's. -->
+    <div class="@container">
     <!-- Sticky under the hub header: Show and the one column header for every group's table. -->
     <div class="bg-card sticky top-14 z-10 -mx-1 grid gap-1 px-1 pt-1">
     <div class="flex flex-wrap items-center gap-2 text-xs">
@@ -774,6 +778,7 @@
       {/each}
       {#if budget < rowCount}<p class="text-muted-foreground text-xs" use:nearView={(v) => (near = v)}>… {rowCount - budget} more below</p>{/if}
     </div>
+    </div>
   {/if}
 {/snippet}
 
@@ -819,17 +824,19 @@
 
 {#snippet cols()}
               <colgroup>
+                <!-- Fixed columns grow with the list's width (container queries on the by-ship wrapper), so the Pledge
+                     column (the flexible one) keeps ~250 px or more at any width. -->
                 {#if melting}<col class="w-10" />{/if}
                 <col />
-                <col class="w-16" />
-                <col class="w-24" />
-                <col class="w-24" />
-                <col class="w-32" />
-                <col class="w-28" />
-                <col class="w-48" />
-                <col class="w-20" />
-                {#if melting}<col class="w-48" />{/if}
-                <col class="w-80" />
+                <col class="w-10 @5xl:w-12 @min-[90rem]:w-16" />
+                <col class="w-16 @5xl:w-20 @min-[90rem]:w-24" />
+                <col class="w-16 @5xl:w-20 @min-[90rem]:w-24" />
+                <col class="w-20 @5xl:w-24 @min-[90rem]:w-32" />
+                <col class="w-20 @5xl:w-24 @min-[90rem]:w-28" />
+                <col class="w-28 @5xl:w-32 @min-[90rem]:w-48" />
+                <col class="w-16 @5xl:w-20" />
+                {#if melting}<col class="w-32 @5xl:w-36 @min-[90rem]:w-48" />{/if}
+                <col class="w-32 @5xl:w-40 @min-[90rem]:w-80" />
               </colgroup>
 {/snippet}
 
@@ -906,6 +913,9 @@
                           </LazyTip>
                         </div>
                       {/if}
+                      {#if s.entries.some((e) => originalIds.has(e.id))}
+                        <div class="text-muted-foreground text-xs">Melt → buyback returns {up?.from ?? 'it'} as bought (not upgraded); the CCUs come back on their own</div>
+                      {/if}
                     {/if}
                     {#if p.items.length}
                       {@const full = allItems || open.has(p.id)}
@@ -975,7 +985,7 @@
                       {/if}
                     </Table.Cell>
                   {/if}
-                  <Table.Cell class="min-w-[150px] text-xs">
+                  <Table.Cell class="min-w-[150px] text-xs whitespace-normal">
                     {#each s.entries as e (e.id)}
                       {@const on = melting && picked.has(e.id)}
                       <div class="flex items-center gap-1.5 py-px whitespace-nowrap">
