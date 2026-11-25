@@ -21,7 +21,8 @@
   import FileText from '@lucide/svelte/icons/file-text';
   import Shield from '@lucide/svelte/icons/shield';
   import Boxes from '@lucide/svelte/icons/boxes';
-  import { BUYMEACOFFEE_URL, PATREON_URL, enlistUrl, REFERRAL_LEADS, REFERRAL_ROTATE_MS } from '@/lib/support';
+  import MessagesSquare from '@lucide/svelte/icons/messages-square';
+  import { BUYMEACOFFEE_URL, DISCORD_URL, PATREON_URL, enlistUrl, REFERRAL_LEADS, REFERRAL_ROTATE_MS } from '@/lib/support';
 
   const REPO = 'https://github.com/voidput/rsi-plus';
   const TRADEMARK = 'Star Citizen®, Roberts Space Industries® and Cloud Imperium® are registered trademarks of Cloud Imperium Rights LLC.';
@@ -54,6 +55,7 @@
     { label: 'Changelog', href: `${REPO}/blob/main/docs/changelog.md`, icon: FileText },
     { label: 'Privacy', href: `${REPO}/blob/main/PRIVACY.md`, icon: Shield },
     { label: 'Report a bug', href: `${REPO}/issues/new`, icon: Bug },
+    { label: 'Discord', href: DISCORD_URL, icon: MessagesSquare },
   ];
 </script>
 
@@ -70,6 +72,7 @@
         <Button variant="ghost" size="xs" href={BUYMEACOFFEE_URL} target="_blank" rel="noopener" class="hover:text-warning"><Coffee class="text-warning" /> Coffee</Button>
         <Button variant="ghost" size="xs" href={PATREON_URL} target="_blank" rel="noopener" class="hover:text-destructive"><HandHeart class="text-destructive" /> Patreon</Button>
         <Button variant="ghost" size="xs" href={`${REPO}/issues/new`} target="_blank" rel="noopener"><Bug /> Bug</Button>
+        <Button variant="ghost" size="xs" href={DISCORD_URL} target="_blank" rel="noopener"><MessagesSquare /> Discord</Button>
         <Collapsible.Trigger>
           {#snippet child({ props })}
             <Button {...props} variant="ghost" size="xs" aria-label={open ? 'Less about RSI+' : 'More about RSI+'}>{#if open}<ChevronDown />{:else}<ChevronUp />{/if} {open ? 'Less' : 'More'}</Button>
