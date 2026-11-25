@@ -5,7 +5,7 @@
    * Spec: docs/plans/specs/filters-and-labels.md → CCUs page.
    */
   import { ownedCcus, type SavedChain } from '@/lib/ccu';
-  import { ccuCsv, ccuFacets, ccuRanges, ccuRows, ccuTotals, groupCcus, type CcuRow } from '@/lib/ccu-rows';
+  import { ccuCsv, ccuFacets, ccuRanges, ccuRows, ccuTotals, groupCcus, savingPct, type CcuRow } from '@/lib/ccu-rows';
   import { applyFacets, type FacetValues } from '@/lib/facets';
   import { hangarUrl } from '@/lib/hangar';
   import { bg } from '@/lib/messages';
@@ -58,7 +58,7 @@
   });
 
   // ---- prefs: facet values, grouping and sort in `rsiplus:ccus` ----
-  type Col = 'from' | 'to' | 'paid' | 'gap' | 'saving' | 'place';
+  type Col = 'from' | 'to' | 'fromMsrp' | 'toMsrp' | 'paid' | 'gap' | 'saving' | 'savingPct' | 'place';
   type Prefs = { values: FacetValues; group: 'upgrade' | 'none'; sort: SortState<Col> };
   const PREFS_KEY = 'rsiplus:ccus';
   const prefs: Prefs = (() => {
@@ -96,27 +96,30 @@
     sortBy(filtered, sort, {
       from: (r) => r.fromName,
       to: (r) => r.toName,
+      fromMsrp: (r) => r.sourceMsrp,
+      toMsrp: (r) => r.targetMsrp,
       paid: (r) => r.paid,
       gap: (r) => r.gap,
       saving: (r) => r.saving,
+      savingPct: (r) => savingPct(r),
       place: (r) => r.place,
     }),
   );
   const shown = $derived(group === 'upgrade' ? groupCcus(sorted) : sorted.map((r) => ({ key: r.key, rep: r, rows: [r] })));
   const totals = $derived(ccuTotals(filtered));
-  const COLS = 8;
+  const COLS = 11;
 
   const openUrl = (r: CcuRow) => (r.place === 'hangar' ? hangarUrl(pledges, r.ref) : (r.buyback?.url ?? BUYBACK_PAGE));
   const insuranceOf = (r: CcuRow) => (r.lti ? 'LTI' : r.insurance);
   const exportCsv = () => downloadFile(`rsi-ccus-${dateStamp()}.csv`, ccuCsv(sorted));
 </script>
 
-{#snippet hull(s: CcuRow['from'], name: string, msrp: number | null)}
+{#snippet hull(s: CcuRow['from'], name: string)}
   <div class="flex items-center gap-2">
     <Thumb src={s?.thumb} {name} placeholder="block" />
     <div class="min-w-0">
       <div class="flex items-center gap-0.5 font-medium">{name || '?'}{#if s}<WikiLink class="-my-1" href={wikiPageUrl(s.name)} name={s.name} />{/if}</div>
-      <div class="text-muted-foreground text-xs">{s?.manufacturer ?? 'not in the catalog'}{#if msrp != null} · {usd(msrp)}{/if}</div>
+      <div class="text-muted-foreground text-xs">{s?.manufacturer ?? 'not in the catalog'}</div>
     </div>
   </div>
 {/snippet}
@@ -165,9 +168,12 @@
           <Table.Row>
             <SortTh key="from" bind:sort>From</SortTh>
             <SortTh key="to" bind:sort>→ To</SortTh>
+            <SortTh key="fromMsrp" bind:sort numeric>From $</SortTh>
+            <SortTh key="toMsrp" bind:sort numeric>To $</SortTh>
             <SortTh key="paid" bind:sort firstDir="desc" numeric>Paid</SortTh>
             <SortTh key="gap" bind:sort firstDir="desc" numeric>Gap</SortTh>
             <SortTh key="saving" bind:sort firstDir="desc" numeric>Saving</SortTh>
+            <SortTh key="savingPct" bind:sort firstDir="desc" numeric>% Saving</SortTh>
             <SortTh key="place" bind:sort>Place</SortTh>
             <Table.Head>Flags</Table.Head>
             <Table.Head class="text-right"><span class="sr-only">Actions</span></Table.Head>
@@ -177,20 +183,24 @@
           {#each shown as g (g.key)}
             {@const r = g.rep}
             <Table.Row>
-              <Table.Cell>{@render hull(r.from, r.fromName, r.sourceMsrp)}</Table.Cell>
+              <Table.Cell>{@render hull(r.from, r.fromName)}</Table.Cell>
               <Table.Cell>
                 <div class="flex flex-wrap items-center gap-1.5">
-                  {@render hull(r.to, r.toName, r.targetMsrp)}
+                  {@render hull(r.to, r.toName)}
                   {#if r.to && /concept/i.test(r.to.flyable)}<Tag kind="stage" value={r.to.flyable} size="xs" />{/if}
                   {#if r.to?.size}<Tag kind="size" value={r.to.size} size="xs" />{/if}
                   {#if g.rows.length > 1}<HintBadge variant="secondary" hint={`${g.rows.length} identical CCUs · paid ${ownUsd(g.rows.reduce((n, x) => n + (x.paid ?? 0), 0))} in all`}>×{g.rows.length}</HintBadge>{/if}
                 </div>
               </Table.Cell>
+              <Table.Cell class="text-right tabular-nums">{r.sourceMsrp != null ? usd(r.sourceMsrp) : '—'}</Table.Cell>
+              <Table.Cell class="text-right tabular-nums">{r.targetMsrp != null ? usd(r.targetMsrp) : '—'}</Table.Cell>
               <Table.Cell class="text-right tabular-nums">
                 {#if r.paid != null}{ownUsd(r.paid)}{:else}<HintBadge variant="muted" hint="Buyback price not read yet — use “Load contents & prices” on the Buyback page">?</HintBadge>{/if}
               </Table.Cell>
               <Table.Cell class="text-right tabular-nums">{r.gap != null ? usd(r.gap) : '—'}</Table.Cell>
               <Table.Cell class={cn('text-right tabular-nums', r.saving != null && r.saving > 0 && 'text-success', r.saving != null && r.saving < 0 && 'text-destructive')}>{r.saving != null ? ownUsd(r.saving) : '—'}</Table.Cell>
+              {@const pct = savingPct(r)}
+              <Table.Cell class={cn('text-right tabular-nums', pct != null && pct > 0 && 'text-success', pct != null && pct < 0 && 'text-destructive')} title="Saving as a share of the MSRP gap">{pct != null ? `${Math.round(pct * 100)}%` : '—'}</Table.Cell>
               <Table.Cell>
                 {#if r.place === 'hangar'}<HintBadge variant="success" hint="In your hangar — applying it costs nothing more">hangar</HintBadge>
                 {:else}<HintBadge variant="warning" hint="Melted — buy it back to use it">buyback</HintBadge>{/if}

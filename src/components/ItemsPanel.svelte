@@ -1,7 +1,7 @@
 <script lang="ts">
   import { nearView } from '@/lib/near-view';
   import { hangarUrl } from '@/lib/hangar';
-  import { CATEGORY_LABEL, line, familyLabel, fitsLabel as fitsLabelOf, inventory, itemsCsv, ownedShipsWithPaints, paintStatus, seriesOf, storePaintFor, storePaintIndex, type Category, type GameShip, type ItemRow } from '@/lib/items';
+  import { CATEGORY_LABEL, line, familyLabel, fitsLabel as fitsLabelOf, inventory, itemsCsv, ownedShipIds, ownedShipsWithPaints, paintStatus, seriesOf, storePaintFor, storePaintIndex, type Category, type GameShip, type ItemRow } from '@/lib/items';
   import { bg } from '@/lib/messages';
   import { catalogItem, gameShipsItem, hangarItem, paintCatalogItem } from '@/lib/settings';
   import { sortBy, type SortState } from '@/lib/sort';
@@ -52,7 +52,7 @@
   const ships = $derived(cat?.ships ?? []);
   const rows = $derived(inventory(hangar?.pledges ?? [], ships));
   const fleet = $derived(ownedShipsWithPaints(rows, game, ships));
-  const ownedIds = $derived(new Set(fleet.map((f) => f.ship.id)));
+  const ownedIds = $derived(ownedShipIds(fleet.map((f) => f.ship)));
   const series = $derived(seriesOf(rows));
   const storeIdx = $derived(storePaintIndex(storePaints?.paints ?? []));
   const storeUrl = (r: ItemRow) => (r.ship ? r.ship.link || null : r.category === 'paint' ? (storePaintFor(r, storeIdx)?.url ?? null) : null);

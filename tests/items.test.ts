@@ -202,7 +202,7 @@ describe('items', () => {
     expect(rows.find((r) => r.title === 'Nameless Paint')?.fits.map((s) => s.id)).toEqual([4]);
   });
 
-  it('family with the catalog: Alpha Wolf is a Wolf, Super Hornet a Hornet; Mk II paints skip Mk I hulls; F7A falls back to the F7C', () => {
+  it('family with the catalog: Alpha Wolf is a Wolf, Super Hornet a Hornet; Mk II paints skip Mk I hulls; an F7A is a stand-in borrowing the F7C', () => {
     const cat = [
       ship(10, 'L-21 Wolf'), ship(11, 'L-22 Alpha Wolf'), ship(12, 'Mustang Alpha'), ship(13, 'Mustang Alpha Vindicator'),
       ship(14, 'F7C Hornet Mk I'), ship(15, 'F7C Hornet Mk II'), ship(16, 'F7C-M Super Hornet Mk II'), ship(17, 'F7C-R Hornet Tracker Mk II'),
@@ -218,8 +218,8 @@ describe('items', () => {
     expect(shipsFor('Wolf - Rosso Paint', cat).map((s) => s.id)).toEqual([10, 11]);
     expect(shipsFor('Hornet Mk II - Tigerveil Paint', cat).map((s) => s.id)).toEqual([15, 16, 17]);
     expect(shipsFor('F7 Hornet Mk II - Ironscale Paint', cat).map((s) => s.id)).toEqual([15, 16, 17]);
-    expect(matchShip('F7A Hornet Mk II', cat)?.id).toBe(15);
-    expect(matchShip('F7A Hornet Mk I', cat)?.id).toBe(14);
+    expect(matchShip('F7A Hornet Mk II', cat)).toMatchObject({ name: 'F7A Hornet Mk II', near: { id: 15 } });
+    expect(matchShip('F7A Hornet Mk I', cat)).toMatchObject({ name: 'F7A Hornet Mk I', near: { id: 14 } });
     const herc = [ship(30, 'C2 Hercules'), ship(31, 'M2 Hercules'), ship(32, 'A2 Hercules'), ship(33, 'Carrack')];
     expect(matchShip('Hercules Starlifter C2', herc)?.id).toBe(30); // "Starlifter" is in no catalog name
     expect(matchShip('Hercules Starlifter A2', herc)?.id).toBe(32);

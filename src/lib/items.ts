@@ -329,12 +329,21 @@ export function ownedShipsWithPaints(rows: ItemRow[], game: GameShip[] = [], shi
     if (!o.gameHow.includes(g.how)) o.gameHow.push(g.how);
     by.set(g.id, o);
   }
+  // A stand-in hull (`CatalogShip.near`: an F7A the catalog doesn't list) takes the paints of the hull it stands in for.
+  const standIns = new Map<number, OwnedShip[]>();
+  for (const o of by.values()) if (o.ship.near) standIns.set(o.ship.near.id, [...(standIns.get(o.ship.near.id) ?? []), o]);
   for (const r of rows) {
     if (r.category !== 'paint') continue;
-    for (const s of r.fits) by.get(s.id)?.paints.push(r);
+    for (const s of r.fits) {
+      by.get(s.id)?.paints.push(r);
+      for (const o of standIns.get(s.id) ?? []) if (!o.paints.includes(r)) o.paints.push(r);
+    }
   }
   return [...by.values()].sort((a, b) => a.ship.name.localeCompare(b.ship.name));
 }
+
+/** Ids `paintStatus` counts as owned: each ship's own, plus the catalog hull a stand-in borrows (its paints fit it). */
+export const ownedShipIds = (ships: Pick<CatalogShip, 'id' | 'near'>[]): Set<number> => new Set(ships.flatMap((s) => (s.near ? [s.id, s.near.id] : [s.id])));
 
 /** Paint ownership vs your fleet: fits a ship you own / fits only ships you don't / unknown ship. */
 export function paintStatus(r: ItemRow, ownedIds: Set<number>): 'owned-ship' | 'no-ship' | 'unknown' {

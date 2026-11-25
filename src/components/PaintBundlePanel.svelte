@@ -623,6 +623,19 @@
   const allMelted = $derived(!!meltProgress && meltProgress.total > 0 && meltProgress.n === meltProgress.total);
   const planFrozen = $derived(!!meltList);
   const cartDone = $derived(cartLines.length === 0 ? planFrozen : !!check?.ok);
+  /** Back to planning: drop the frozen checklist (its ticks too); picks, cart read-back and options stay. */
+  const reopenPlan = () => (meltList = null);
+  /** Start over: checklist, picks, per-row tweaks and the cart read-back go; options, wanted paints and RSI's cart stay. */
+  function resetPlan() {
+    meltList = null;
+    manual = null;
+    optionOf = {};
+    forceRebuy = [];
+    dropped = {};
+    rsiCart = null;
+    cartReadErr = '';
+    cart.reset();
+  }
   // ---- guided flow: steps judged from the live state above; after the checklist starts, the snapshot is the anchor ----
   const guide = $derived.by((): WizardStep[] => {
     const planning = !meltList;
@@ -646,7 +659,8 @@
         done: planning ? chosen > 0 : true,
         hint: chosen ? `${picks.length} to rebuy + ${meltOnly.length} melt only — you end up ${signed(ahead)} ahead. Tick / untick rows in the candidates table to adjust.` : 'Auto-pick fills the biggest bundle that still gains credit; then tick or untick rows below.',
         warn: chosen && ahead < 0 ? `You would lose ${usd(-ahead)} — unpick until the number is positive.` : overCap ? `Over the cart cap: ${totals.lines} / ${limit} lines.` : undefined,
-        action: { label: 'Auto-pick best', onclick: () => ((manual = null), (optionOf = {})), disabled: manual == null },
+        action: planning ? { label: 'Auto-pick best', onclick: () => ((manual = null), (optionOf = {})), disabled: manual == null } : undefined,
+        undo: planning ? (manual != null ? { label: 'Clear picks', onclick: () => ((manual = []), (optionOf = {})) } : undefined) : { label: 'Reopen the plan (clears the checklist)', onclick: reopenPlan },
       },
       {
         id: 'cart',
@@ -654,7 +668,9 @@
         done: planning ? chosen > 0 && cartOk : true,
         hint: cartLines.length ? `${added} / ${cartLines.length} lines in the cart — nothing is paid yet, RSI only holds them.` : 'Nothing to rebuy: these pledges are melt only.',
         warn: firstError ? `${cartErrorLabel(firstError.code)} — ${firstError.msg}` : undefined,
-        action: cartLines.length ? { label: cartBusy ? 'Adding…' : added ? `Add the remaining ${cartLines.length - added}` : `Add ${cartLines.length} lines to the cart`, onclick: addAll, disabled: cartBusy || overCap, busy: cartBusy } : undefined,
+        action: planning && cartLines.length ? { label: cartBusy ? 'Adding…' : added ? `Add the remaining ${cartLines.length - added}` : `Add ${cartLines.length} lines to the cart`, onclick: addAll, disabled: cartBusy || overCap, busy: cartBusy } : undefined,
+        extra: cartLines.length ? { label: 'Open RSI cart', href: CART_URL } : undefined,
+        undo: planning ? undefined : { label: 'Reopen the plan (clears the checklist)', onclick: reopenPlan },
       },
       {
         id: 'confirm',
@@ -663,6 +679,7 @@
         hint: "Reads your RSI cart back: every planned paint must be in it, and you see RSI's real multi-paint discount. Only then is melting safe.",
         warn: check && !check.ok ? checkProblem(check) : cartReadErr || undefined,
         action: cartLines.length ? { label: cartReading ? 'Reading cart…' : rsiCart ? 'Re-check cart' : 'Confirm cart', onclick: confirmCart, disabled: cartReading, busy: cartReading } : undefined,
+        undo: planning ? undefined : { label: 'Reopen the plan (clears the checklist)', onclick: reopenPlan },
       },
       {
         id: 'melt',
@@ -736,7 +753,7 @@
         </Select.Root>
       </div>
   {/if}
-  <Wizard title="Guided melt & rebuy" steps={guide} storageKey="paints" doneText="Melted, bought back, and the paints are back in your hangar." onReset={() => (meltList = null)} resetLabel="Clear the checklist" />
+  <Wizard title="Guided melt & rebuy" steps={guide} storageKey="paints" doneText="Melted, bought back, and the paints are back in your hangar." onReset={resetPlan} resetLabel="Start over" />
   {#if !storePaints.length}
     <Empty>Store paints not loaded yet — use <em>Refresh store paints</em> on Paints by ship.</Empty>
   {:else if !cands.length && !wanted.length && !meltOnly.length}
