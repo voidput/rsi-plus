@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.27.0](https://github.com/voidput/rsi-plus/compare/v0.26.0...v0.27.0) (2026-11-25)
+
+
+### Features
+
+* **ccus:** sortable % Saving column ([1a61132](https://github.com/voidput/rsi-plus/commit/1a611322328efbfd5befd3ce50ef7c83cfae6278))
+* **ccus:** sortable From $ and To $ MSRP columns ([d2388ce](https://github.com/voidput/rsi-plus/commit/d2388ce812c9200a139701dceeb3492ee14f3310))
+* **hub:** Discord link in the footer ([aac166d](https://github.com/voidput/rsi-plus/commit/aac166d41a538e343d5be0c9553f709514df1bb5))
+* **paints:** step back, undo and start over in the paint rebuy guide ([b7c8a5d](https://github.com/voidput/rsi-plus/commit/b7c8a5d6e6a5aee1960748c5de0de88072728b0e))
+* **wallet:** funding line chart with history since 2012 and year-over-year compare ([6e48de8](https://github.com/voidput/rsi-plus/commit/6e48de8dfecee12a288cdd050d7ef203d8dc6569))
+
+
+### Bug Fixes
+
+* **ships:** F7A Hornet Mk II is its own hull; unknown model codes keep their name with a warning ([e65849a](https://github.com/voidput/rsi-plus/commit/e65849a5cd9aa1ed4d80b37804be9395e4e0dec2))
+
 ## [0.26.0](https://github.com/voidput/rsi-plus/compare/v0.25.0...v0.26.0) (2026-11-22)
 
 
