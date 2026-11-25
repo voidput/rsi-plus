@@ -1,11 +1,13 @@
 ---
 title: Changelog
 tags: [changelog]
-updated: 2026-11-22
+updated: 2026-11-25
 ---
 # Changelog
 
 ## Unreleased
+
+## 0.27.0 — 2026-11-25
 - Paint rebuy guide: *Back* and *Next* step through the guide, a finished step's title opens it again with an undo (clear the picks, reopen the plan), and *Start over* (asks first) is there from the first step on, not only at the end. Start over clears the plan, picks and checklist; your options, wanted paints and RSI's cart stay.
 - Wallet → Star Citizen funding: a line chart by day, week, month or year with history back to the 2012 campaign (bundled from the community funding tracker, then RSI's own numbers as you open the page), each period against the one before and the same period a year earlier, the period so far with its pace, and *Compare years*: month by month per year (running total optional) or yearly totals, with a year-over-year table (year to date for the current year).
 - Fixed: the funding card called RSI's last reported period "running" and projected it. RSI only reports finished periods; the running one is now worked out from the live total.
