@@ -322,6 +322,7 @@ Optional one-click hangar sync to [StarOrg Tools](https://starorg.tools). Opt-in
 - **Pre-releases (`dev` branch)**:
   - Day-to-day work lands on `dev`. Every push there runs CI and `prerelease.yml`.
   - After each release `release.yml`'s `backmerge` job merges `main` back into `dev` (changelog conflict auto-resolved by `scripts/backmerge-changelog.mjs`, other conflicts → PR), so the manifest the prerelease version reads is current.
+  - A final `notify` job posts each prerelease (and, in `release.yml`, each stable release) to Discord via `scripts/discord-notify.sh` (secrets `DISCORD_RELEASE_WEBHOOK_DEV` / `_MAIN`; unset = skipped, failures only warn).
   - `scripts/next-prerelease.sh` works out the next version: the base comes from `.release-please-manifest.json`, the bump from the conventional commits since the last stable `v*` tag.
   - The workflow sets `package.json` to `<next>-dev<run:04>` in CI only (never committed), zips all four targets, and publishes GitHub prerelease `v<next>-dev<run:04>`. The run number is zero-padded because GitHub's releases page sorts tags as text (`dev.9` > `dev.13`); an alphanumeric identifier with leading zeros is still valid semver and compares right both ways. They are created with `--prerelease --latest=false`; the newest 10 are kept (the prune matches both `-dev.N` and `-devNNNN` tags).
   - WXT's `simplifyVersion` makes the manifest `version` `<next>`, and Chromium builds get `version_name` `<next>-dev<run:04>`. Firefox gets only `<next>`.
