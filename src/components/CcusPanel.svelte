@@ -5,7 +5,7 @@
    * Spec: docs/plans/specs/filters-and-labels.md → CCUs page.
    */
   import { ownedCcus, type SavedChain } from '@/lib/ccu';
-  import { ccuCsv, ccuFacets, ccuRanges, ccuRows, ccuTotals, groupCcus, type CcuRow } from '@/lib/ccu-rows';
+  import { ccuCsv, ccuFacets, ccuRanges, ccuRows, ccuTotals, groupCcus, savingPct, type CcuRow } from '@/lib/ccu-rows';
   import { applyFacets, type FacetValues } from '@/lib/facets';
   import { hangarUrl } from '@/lib/hangar';
   import { bg } from '@/lib/messages';
@@ -58,7 +58,7 @@
   });
 
   // ---- prefs: facet values, grouping and sort in `rsiplus:ccus` ----
-  type Col = 'from' | 'to' | 'fromMsrp' | 'toMsrp' | 'paid' | 'gap' | 'saving' | 'place';
+  type Col = 'from' | 'to' | 'fromMsrp' | 'toMsrp' | 'paid' | 'gap' | 'saving' | 'savingPct' | 'place';
   type Prefs = { values: FacetValues; group: 'upgrade' | 'none'; sort: SortState<Col> };
   const PREFS_KEY = 'rsiplus:ccus';
   const prefs: Prefs = (() => {
@@ -101,12 +101,13 @@
       paid: (r) => r.paid,
       gap: (r) => r.gap,
       saving: (r) => r.saving,
+      savingPct: (r) => savingPct(r),
       place: (r) => r.place,
     }),
   );
   const shown = $derived(group === 'upgrade' ? groupCcus(sorted) : sorted.map((r) => ({ key: r.key, rep: r, rows: [r] })));
   const totals = $derived(ccuTotals(filtered));
-  const COLS = 10;
+  const COLS = 11;
 
   const openUrl = (r: CcuRow) => (r.place === 'hangar' ? hangarUrl(pledges, r.ref) : (r.buyback?.url ?? BUYBACK_PAGE));
   const insuranceOf = (r: CcuRow) => (r.lti ? 'LTI' : r.insurance);
@@ -172,6 +173,7 @@
             <SortTh key="paid" bind:sort firstDir="desc" numeric>Paid</SortTh>
             <SortTh key="gap" bind:sort firstDir="desc" numeric>Gap</SortTh>
             <SortTh key="saving" bind:sort firstDir="desc" numeric>Saving</SortTh>
+            <SortTh key="savingPct" bind:sort firstDir="desc" numeric>% Saving</SortTh>
             <SortTh key="place" bind:sort>Place</SortTh>
             <Table.Head>Flags</Table.Head>
             <Table.Head class="text-right"><span class="sr-only">Actions</span></Table.Head>
@@ -197,6 +199,8 @@
               </Table.Cell>
               <Table.Cell class="text-right tabular-nums">{r.gap != null ? usd(r.gap) : '—'}</Table.Cell>
               <Table.Cell class={cn('text-right tabular-nums', r.saving != null && r.saving > 0 && 'text-success', r.saving != null && r.saving < 0 && 'text-destructive')}>{r.saving != null ? ownUsd(r.saving) : '—'}</Table.Cell>
+              {@const pct = savingPct(r)}
+              <Table.Cell class={cn('text-right tabular-nums', pct != null && pct > 0 && 'text-success', pct != null && pct < 0 && 'text-destructive')} title="Saving as a share of the MSRP gap">{pct != null ? `${Math.round(pct * 100)}%` : '—'}</Table.Cell>
               <Table.Cell>
                 {#if r.place === 'hangar'}<HintBadge variant="success" hint="In your hangar — applying it costs nothing more">hangar</HintBadge>
                 {:else}<HintBadge variant="warning" hint="Melted — buy it back to use it">buyback</HintBadge>{/if}

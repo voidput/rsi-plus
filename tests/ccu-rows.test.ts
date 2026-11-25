@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ownedCcus, type SavedChain } from '@/lib/ccu';
-import { ccuCsv, ccuFacets, ccuRanges, ccuRows, ccuTotals, groupCcus, savingOf } from '@/lib/ccu-rows';
+import { ccuCsv, ccuFacets, ccuRanges, ccuRows, ccuTotals, groupCcus, savingOf, savingPct } from '@/lib/ccu-rows';
 import { applyFacets, facetCounts } from '@/lib/facets';
 import type { BuybackItem, Pledge } from '@/lib/hangar';
 import type { CatalogShip } from '@/lib/store';
@@ -77,6 +77,10 @@ describe('ccu rows', () => {
     expect(g).toHaveLength(5);
     const csv = ccuCsv(rows).split('\n');
     expect(csv).toHaveLength(7);
+    expect(savingPct({ saving: 2500, gap: 8500 })).toBeCloseTo(0.294, 3);
+    expect(savingPct({ saving: -1000, gap: 13000 })).toBeCloseTo(-0.077, 3);
+    expect(savingPct({ saving: null, gap: 8500 })).toBeNull();
+    expect(savingPct({ saving: 500, gap: 0 })).toBeNull();
     expect(csv[1]).toBe('hangar,10,Aurora MR,RSI,Cutlass Black,Drake,60.00,25.00,110.00,85.00,25.00,true,,true,false,true,,Flight Ready,Small');
   });
 });

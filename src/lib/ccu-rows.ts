@@ -117,6 +117,8 @@ export function ccuRows(owned: OwnedCcu[], ships: CatalogShip[], pledges: Pledge
 }
 
 export type SavingBucket = 'saves' | 'none' | 'negative' | 'unknown';
+/** Saving as a share of the MSRP gap (0.5 = paid half of list); null when either is unknown or the gap isn't positive. */
+export const savingPct = (r: Pick<CcuRow, 'saving' | 'gap'>): number | null => (r.saving != null && r.gap != null && r.gap > 0 ? r.saving / r.gap : null);
 export const savingOf = (r: CcuRow): SavingBucket => (r.saving == null ? 'unknown' : r.saving > 0 ? 'saves' : r.saving < 0 ? 'negative' : 'none');
 
 const makerOptions = (rows: CcuRow[], get: (r: CcuRow) => CatalogShip | null): FacetOption<CcuRow>[] => {

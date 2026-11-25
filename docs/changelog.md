@@ -11,7 +11,7 @@ updated: 2026-11-22
 - Fixed: the funding card called RSI's last reported period "running" and projected it. RSI only reports finished periods; the running one is now worked out from the live total.
 - Fixed: an F7A Hornet Mk II (a limited upgrade RSI's ship catalog does not list) showed as an F7C Hornet Mk II in My ships, the fleet export and the CCU planner. It is its own hull now, at its $175 pledge price, and still takes the Hornet Mk II paints.
 - My ships: a hull RSI's ship catalog has no entry for keeps its own name instead of becoming the nearest catalog hull with another model code (F7A Hornet Mk I, C8 Pisces). Maker, role, MSRP and paints come from that nearest hull, and a ⚠ mark says so. Hover it for how to report a wrong ship: Settings → Debug → Export debug file, posted on the RSI+ Discord. Ships with no match at all get the same mark.
-- CCUs: *From $* and *To $* columns with each hull's MSRP, sortable, so the list can run by value (lowest source first) instead of only by name. The MSRPs moved out of the ship cells into them.
+- CCUs: *From $* and *To $* columns with each hull's MSRP and a *% Saving* column (saving as a share of the MSRP gap), all sortable, so the list can run by value (lowest source first) instead of only by name. The MSRPs moved out of the ship cells into their columns.
 - Debug file: lists every ship in your hangar with the catalog ship it was matched to and how (exact name, near match, none), worst first.
 
 ## 0.26.0 — 2026-11-22
