@@ -15,6 +15,7 @@ import type { Concierge } from './concierge';
 import type { Profiles } from './accounts';
 import type { ReadState } from './read';
 import type { Funding, FundingRange } from './wallet';
+import type { FundingLog } from './funding-history';
 import { NO_WATCHES, type FeedEvent, type Watches } from './watch';
 import { type IcDraft, type IcIssues, type IcLinks, type IcMentions } from './issue-council';
 import type { ImpCache, ImpFilter, ImpSort } from './impound';
@@ -221,6 +222,8 @@ export const paintCatalogItem = storage.defineItem<PaintCatalog | null>('local:p
 export const storeSnapshotItem = storage.defineItem<StoreSnapshot>('local:storeSnapshot', { fallback: {} });
 export const storeLogItem = storage.defineItem<StoreChange[]>('local:storeLog', { fallback: [] });
 export const fundingItem = storage.defineItem<Partial<Record<FundingRange, Funding>>>('local:funding', { fallback: {} });
+/** Every funding period RSI+ has read from RSI (extends the bundled history past its last day; `lib/funding-history`). */
+export const fundingLogItem = storage.defineItem<FundingLog>('local:fundingLog', { fallback: { day: {}, week: {}, month: {} } });
 /** Ships you want: notify when a warbond CCU / standalone sale appears or the price drops. */
 export interface WishShip {
   id: number;

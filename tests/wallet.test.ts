@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Pledge } from '@/lib/hangar';
 import type { CatalogShip } from '@/lib/store';
-import { ccuOverview, fleetValue, pledgeMsrp, fundingStats, parseFunding, periodElapsed, pointLabel, shareOfFunding, paymentOf, spendByPayment, spendByMonth, spendByType, spendByYear, spendSummary } from '@/lib/wallet';
+import { ccuOverview, fleetValue, pledgeMsrp, parseFunding, pointLabel, shareOfFunding, paymentOf, spendByPayment, spendByMonth, spendByType, spendByYear, spendSummary } from '@/lib/wallet';
 
 const pledge = (id: number, value: number, date: string, type: Pledge['type'] = 'ship', warbond = false): Pledge => ({
   id,
@@ -169,25 +169,6 @@ describe('ccu overview', () => {
       [2, 480, -20],
     ]);
     expect(o).toMatchObject({ count: 3, paid: 570, worth: 1140, gain: 0, winners: 1, gifted: 1 });
-  });
-});
-
-describe('funding extras', () => {
-  it('elapsed fraction of day / week / month', () => {
-    const noon = new Date(2026, 9, 14, 12, 0); // Wed 14 Oct 2026
-    expect(periodElapsed('day', noon)).toBeCloseTo(0.5);
-    expect(periodElapsed('week', noon)).toBeCloseTo(2.5 / 7);
-    expect(periodElapsed('month', noon)).toBeCloseTo(13.5 / 31);
-  });
-  it('average + best over completed periods, projection of the running one', () => {
-    const f = parseFunding(
-      { success: 1, data: { funds: 0, chart: { '2026-07': { gross: 100000 }, '2026-08': { gross: 300000 }, '2026-09': { gross: 200000 }, '2026-10': { gross: 100000 } } } },
-      'month',
-    );
-    const s = fundingStats(f, new Date(2026, 9, 16, 12, 0)); // half of October
-    expect(s.average).toBe(2000);
-    expect(s.best?.key).toBe('2026-08');
-    expect(s.projected).toBe(2000);
   });
 });
 

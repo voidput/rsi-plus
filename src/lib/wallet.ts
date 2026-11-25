@@ -278,35 +278,6 @@ export function ccuOverview(owned: OwnedCcu[], ships: CatalogShip[]): CcuOvervie
   };
 }
 
-// ---- funding dashboard extras ----
-
-/** Fraction of the current period that has elapsed (0–1), for projecting the running day / week / month. */
-export function periodElapsed(range: FundingRange, now = new Date()): number {
-  if (range === 'day') return Math.max(0.01, (now.getHours() * 60 + now.getMinutes()) / 1440);
-  if (range === 'week') {
-    const dow = (now.getDay() + 6) % 7; // Monday = 0
-    return Math.max(0.01, (dow + (now.getHours() * 60 + now.getMinutes()) / 1440) / 7);
-  }
-  const days = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-  return Math.max(0.01, (now.getDate() - 1 + (now.getHours() * 60 + now.getMinutes()) / 1440) / days);
-}
-
-export interface FundingStats {
-  /** Mean of the completed periods shown (the running one excluded). */
-  average: number;
-  best: FundingPoint | null;
-  /** Running period scaled to its full length. */
-  projected: number;
-}
-
-export function fundingStats(f: Funding, now = new Date()): FundingStats {
-  const done = f.points.slice(0, -1);
-  const current = f.points.at(-1);
-  const average = done.length ? r2(done.reduce((n, p) => n + p.usd, 0) / done.length) : 0;
-  const best = done.reduce<FundingPoint | null>((b, p) => (!b || p.usd > b.usd ? p : b), null);
-  return { average, best, projected: current ? r2(current.usd / periodElapsed(f.range, now)) : 0 };
-}
-
 // ---- Where the money went: what the hangar can and cannot tell ----
 
 export interface SpendLedger {

@@ -3,15 +3,19 @@
   import { fetchCredits } from '@/lib/account';
   import { ownedCcus } from '@/lib/ccu';
   import { hangarUrl, totals, type BuybackItem, type Credits, type Pledge } from '@/lib/hangar';
-  import { buybackItem, catalogItem, fundingItem, hangarItem, ordersItem } from '@/lib/settings';
+  import { buybackItem, catalogItem, fundingItem, fundingLogItem, hangarItem, ordersItem } from '@/lib/settings';
   import { r2, usd0 } from '@/lib/money';
   import { displayCurrency, fmtUsdCompact } from '@/lib/currency';
   import { fmtDateTime } from '@/lib/dates';
   import { LINK } from '@/lib/ui';
   import { captureBilling, fetchOrders, orderSlices, ordersByMonth, ordersByYear, ordersCumulative, orderTotals, warbondInOrders, type Order, type SubPayment } from '@/lib/orders';
   import type { CatalogShip } from '@/lib/store';
-  import { ccuOverview, fetchFunding, fleetValue, fundingStats, shareOfFunding, spendByPayment, spendByMonth, spendByType, spendByYear, spendLedger, spendSummary, type Funding, type FundingRange } from '@/lib/wallet';
-  import { AreaChart, BarChart, PieChart } from 'layerchart';
+  import { ccuOverview, fetchFunding, fleetValue, shareOfFunding, spendByPayment, spendByMonth, spendByType, spendByYear, spendLedger, spendSummary, type Funding, type FundingRange } from '@/lib/wallet';
+  import { AreaChart, BarChart, LineChart, PieChart } from 'layerchart';
+  import { bundled, dayHistory, elapsed, monthOverlay, recordFunding, runningPeriod, series as fundingSeries, SPANS, yearTable, type FundingLog, type Grain } from '@/lib/funding-history';
+  import { untrack } from 'svelte';
+  import { Switch } from '@/components/ui/switch';
+  import { Label } from '@/components/ui/label';
   import ExternalLink from '@lucide/svelte/icons/external-link';
   import Wallet from '@lucide/svelte/icons/wallet';
   import CalendarRange from '@lucide/svelte/icons/calendar-range';
@@ -137,28 +141,37 @@
   }
 
   // ---- funding (public RSI stats) ----
-  let range = $state<FundingRange>('month');
+  // RSI returns the last 7 *completed* days / weeks / months; each read is also logged (`fundingLogItem`) so the long
+  // chart (bundled history + the log) runs up to yesterday. All three ranges are read once an hour.
+  const API_RANGES: FundingRange[] = ['day', 'week', 'month'];
   let cache = $state<Partial<Record<FundingRange, Funding>>>({});
+  let fLog = $state<FundingLog | null>(null);
   let fundingBusy = $state(false);
   let fundingError = $state('');
-  const funding = $derived(cache[range] ?? null);
+  /** Freshest read: lifetime funds + citizens (the same on every range). */
+  const funding = $derived(Object.values(cache).reduce<Funding | null>((a, f) => (f && (!a || f.at > a.at) ? f : a), null));
   const FRESH = 60 * 60 * 1000;
   let ctrl: AbortController | null = null;
   async function loadFunding(force = false) {
-    const have = cache[range];
-    if (!force && have && Date.now() - have.at < FRESH) return;
+    const stale = API_RANGES.filter((r) => force || !cache[r] || Date.now() - cache[r]!.at >= FRESH);
+    if (!stale.length) return;
     ctrl?.abort();
     ctrl = new AbortController();
+    const signal = ctrl.signal;
     fundingBusy = true;
     fundingError = '';
     try {
-      const f = await fetchFunding(range, ctrl.signal);
-      cache = { ...cache, [range]: f };
+      for (const r of stale) {
+        const f = await fetchFunding(r, signal);
+        cache = { ...cache, [r]: f };
+        fLog = recordFunding(fLog, f);
+      }
       await fundingItem.setValue(JSON.parse(JSON.stringify(cache)));
+      await fundingLogItem.setValue(JSON.parse(JSON.stringify(fLog)));
     } catch (e) {
       if ((e as Error).name !== 'AbortError') fundingError = (e as Error).message;
     } finally {
-      fundingBusy = false;
+      if (ctrl?.signal === signal) fundingBusy = false;
     }
   }
 
@@ -168,16 +181,14 @@
     hangarItem.getValue().then((v) => (hangar = v)).catch((e) => (error = `Couldn't read saved hangar: ${(e as Error).message}`));
     buybackItem.getValue().then((b) => ((buybacks = b?.items.length ?? 0), (buybackList = b?.items ?? []))).catch(() => {});
     catalogItem.getValue().then((c) => (ships = c?.ships ?? [])).catch(() => {});
-    fundingItem
-      .getValue()
-      .then((c) => (cache = c ?? {}))
+    Promise.all([fundingItem.getValue().then((c) => (cache = c ?? {})), fundingLogItem.getValue().then((l) => (fLog = l))])
       .catch(() => {})
       .finally(() => (ready = true));
     const off = hangarItem.watch((v) => (hangar = v));
     return () => (ctrl?.abort(), off());
   });
   $effect(() => {
-    if (ready) void loadFunding(); // reads `range` + `cache[range]`; a fresh cache entry returns early
+    if (ready) untrack(() => void loadFunding()); // once, after the cached reads; Refresh forces a re-read
   });
 
   // ---- personal spend ----
@@ -267,16 +278,52 @@
   /** Fits a narrow bar column: $55, $2.3k, $16k. */
   const short = (n: number) => (displayCurrency() !== 'USD' ? (n >= 1e3 ? fmtUsdCompact(n) : usd0(n)) : n >= 1e6 ? big(n) : n >= 1e4 ? `$${Math.round(n / 1e3)}k` : n >= 1e3 ? `$${(n / 1e3).toFixed(1)}k` : usd0(n));
   const fmtN = (n: number) => ownMoney(`¤${fmtGrouped(n)}`);
-  const RANGES: { id: FundingRange; label: string; hint: string }[] = [
-    { id: 'day', label: 'Days', hint: 'last 7 days' },
-    { id: 'week', label: 'Weeks', hint: 'last 7 weeks' },
-    { id: 'month', label: 'Months', hint: 'last 7 months' },
+  // ---- funding: long chart (bundled history + logged RSI reads) and year over year ----
+  const GRAINS: { id: Grain; label: string }[] = [
+    { id: 'day', label: 'Days' },
+    { id: 'week', label: 'Weeks' },
+    { id: 'month', label: 'Months' },
+    { id: 'year', label: 'Years' },
   ];
-  const period = $derived(funding?.points.at(-1));
-  const prev = $derived(funding?.points.at(-2));
-  const delta = $derived(period && prev && prev.usd > 0 ? ((period.usd - prev.usd) / prev.usd) * 100 : null);
-  const shown = $derived(funding ? funding.points.reduce((s, p) => s + p.usd, 0) : 0);
-  const fstats = $derived(funding ? fundingStats(funding) : null);
+  let grain = $state<Grain>('month');
+  let spans = $state<Record<Grain, number>>({ day: 90, week: 52, month: 36, year: 0 });
+  const fdays = $derived(dayHistory(fLog));
+  const fseries = $derived(fundingSeries(fdays, grain, fLog));
+  const fwindow = $derived(spans[grain] ? fseries.slice(-spans[grain]) : fseries);
+  const fByKey = $derived(new Map(fseries.map((p) => [p.key, p])));
+  /** Same period one year earlier: `2026-10` → `2025-10`, `2026-47` → `2025-47`, a day → that date last year. */
+  const yearAgo = (key: string) => (grain === 'year' ? String(Number(key) - 1) : `${Number(key.slice(0, 4)) - 1}${key.slice(4)}`);
+  const pctOf = (a: number, b: number | undefined) => (b ? ((a - b) / b) * 100 : null);
+  const lastDone = $derived(fseries.at(-1));
+  const beforeDone = $derived(fseries.at(-2));
+  const vsPrev = $derived(lastDone ? pctOf(lastDone.usd, beforeDone?.usd) : null);
+  const vsYear = $derived(lastDone ? pctOf(lastDone.usd, fByKey.get(yearAgo(lastDone.key))?.usd) : null);
+  const running = $derived(funding ? runningPeriod(fdays, funding.funds, grain) : null);
+  const pace = $derived(running ? Math.round(running.usd / elapsed(grain)) : 0);
+  const winAvg = $derived(fwindow.length ? Math.round(fwindow.reduce((n, p) => n + p.usd, 0) / fwindow.length) : 0);
+  const winBest = $derived(fwindow.reduce<(typeof fwindow)[number] | null>((b, p) => (!b || p.usd > b.usd ? p : b), null));
+  const winTotal = $derived(fwindow.reduce((n, p) => n + p.usd, 0));
+  const grainWord = $derived(grain === 'day' ? 'day' : grain === 'week' ? 'week' : grain === 'month' ? 'month' : 'year');
+  const arrow = (p: number) => `${p >= 0 ? '▲' : '▼'} ${Math.abs(p).toFixed(0)}%`;
+  const fmtPct = (p: number | null | undefined) => (p == null ? '—' : `${p >= 0 ? '+' : '−'}${Math.abs(p * 100).toFixed(1)}%`);
+  const fmtDelta = (n: number | null | undefined) => (n == null ? '—' : `${n >= 0 ? '+' : '−'}${big(Math.abs(n))}`);
+  const runLabel = $derived(
+    running ? (grain === 'day' ? 'today so far' : grain === 'week' ? 'this week so far' : grain === 'month' ? 'this month so far' : 'this year so far') : '',
+  );
+
+  // compare years
+  const years = $derived(yearTable(fdays, funding?.funds ?? 0));
+  const yearIds = $derived(years.map((r) => r.year));
+  let cmpMode = $state<'overlay' | 'yearly'>('overlay');
+  let cumulativeYears = $state(false);
+  let cmpPick = $state<number[] | null>(null);
+  /** Default: this year and the two before. */
+  const cmpYears = $derived((cmpPick ?? yearIds.slice(-3)).filter((y) => yearIds.includes(y)).sort((a, b) => a - b));
+  const toggleYear = (y: number) => (cmpPick = cmpYears.includes(y) ? cmpYears.filter((x) => x !== y) : [...cmpYears, y]);
+  const overlay = $derived(monthOverlay(fdays, cmpYears, cumulativeYears, funding?.funds ?? 0));
+  const yearColor = (y: number) => PALETTE[(yearIds.length - 1 - yearIds.indexOf(y)) % PALETTE.length]!;
+  const overlayConfig = $derived(Object.fromEntries(cmpYears.map((y) => [`y${y}`, { label: String(y), color: yearColor(y) }])) as Chart.ChartConfig);
+  const yearlyLine = $derived(years.filter((r) => r.year > Number(bundled.start.slice(0, 4))).map((r) => ({ x: r.year, value: r.usd, ytdPrev: r.ytd?.prev ?? null, partial: r.partial })));
   const facts = $derived<[string, string][]>([
     ['Backing since', sum.since ? `${new Date(sum.since).getFullYear()} · ${sum.years} yr` : '—'],
     ['Per year', money0(sum.perYear)],
@@ -314,7 +361,6 @@
   const monthBars = $derived<BarPoint[]>(
     useOrders ? oMonth.map((b) => ({ key: b.key, label: monthLabel(b), value: b.cash, hint: `${b.key} · ${orderHint(b)}` })) : byMonth.map((b) => ({ key: b.key, label: monthLabel(b), value: b.value, hint: `${b.key} · ${plural(b.count)}` })),
   );
-  const fundingBars = $derived<BarPoint[]>(funding ? funding.points.map((p, i, a) => ({ key: p.key, label: p.label, value: p.usd, hint: p.key, last: i === a.length - 1 })) : []);
   const typeSlices = $derived<Slice[]>(byType.map((b) => ({ key: b.key, label: b.label, value: b.value, count: b.count })));
   const paymentSlices = $derived<Slice[]>(useOrders ? orderSlices(orderList) : byPayment.map((b) => ({ key: b.key, label: b.label, value: b.value, count: b.count })));
   /** Running total as dated points for the big area chart. */
@@ -835,39 +881,184 @@
     <Card.Header>
       <Card.Title>Star Citizen funding</Card.Title>
       <Card.Description class="text-xs">
-        RSI's public crowdfund counter (the numbers behind the old funding page).
+        RSI's public crowdfund counter, back to Nov 2012 (history up to {bundled.through} from the <a class={LINK} href={bundled.url} target="_blank" rel="noopener">community funding tracker</a>, after that every RSI read this browser made).
         {#if funding} Updated {fmtDateTime(funding.at)}.{/if}
       </Card.Description>
       <Card.Action class="flex flex-wrap items-center gap-2">
-        <Segmented options={RANGES} bind:value={range} ariaLabel="Funding range" />
+        <Segmented options={GRAINS} bind:value={grain} ariaLabel="Funding period" />
+        {#if SPANS[grain].length > 1}<Segmented options={SPANS[grain].map((o) => ({ id: o.n, label: o.label }))} bind:value={spans[grain]} ariaLabel="Funding window" size="sm" />{/if}
         <Button variant="outline" disabled={fundingBusy} onclick={() => loadFunding(true)}>{fundingBusy ? '…' : 'Refresh'}</Button>
       </Card.Action>
     </Card.Header>
     <Card.Content class="grid gap-3">
       {#if fundingError}<Alert.Root variant="destructive"><Alert.Description>Funding: {fundingError}</Alert.Description></Alert.Root>{/if}
-      {#if funding}
-        <StatGrid>
+      <StatGrid>
+        {#if funding}
           <Stat value={big(funding.funds)} label="raised to date" />
           <Stat value={fmtGrouped(funding.fans)} label="citizens" />
           <Stat value={funding.fans ? money0(funding.funds / funding.fans) : '—'} label="per citizen" />
-          {#if period}
-            <Stat value={big(period.usd)} label={`this ${range}`} delta={delta != null ? { text: `${delta >= 0 ? '▲' : '▼'} ${Math.abs(delta).toFixed(0)}% vs last`, tone: delta >= 0 ? 'up' : 'down' } : null}>
-              {@render spark(funding.points.map((p) => p.usd), 'auto')}
-            </Stat>
+        {/if}
+        {#if lastDone}
+          <Stat
+            value={big(lastDone.usd)}
+            label={`last full ${grainWord} · ${lastDone.label}`}
+            delta={vsPrev != null ? { text: `${arrow(vsPrev)} vs the ${grainWord} before`, tone: vsPrev >= 0 ? 'up' : 'down' } : null}
+            sub={vsYear != null && grain !== 'year' ? `${arrow(vsYear)} vs a year earlier` : undefined}
+          >
+            {@render spark(fwindow.slice(-12).map((p) => p.usd), 'auto')}
+          </Stat>
+        {/if}
+        {#if running}
+          <Stat value={big(running.usd)} label={runLabel} sub={`since ${running.since}`} />
+          {#if grain !== 'day'}<Stat value={big(pace)} valueTone={pace > winAvg ? 'ok' : winAvg > 0 && pace < winAvg ? 'warn' : null} label={`this ${grainWord} on pace for`} />{/if}
+        {/if}
+        {#if fwindow.length}
+          <Stat value={big(winTotal)} label={`last ${fwindow.length} ${grainWord}s`} />
+          <Stat value={big(winAvg)} label={`average per ${grainWord}`} />
+          {#if winBest}<Stat value={big(winBest.usd)} label={`best ${grainWord} shown · ${winBest.label}`} />{/if}
+        {/if}
+        {#if funding && all.length && funding.fans}<Stat value={own(`${(sum.value / (funding.funds / funding.fans)).toFixed(1)}×`)} label="you vs the average citizen" />{/if}
+      </StatGrid>
+      <Card.Root size="sm" class="min-w-0 shadow-none">
+        <Card.Content>
+          {#if fwindow.length > 1}
+            <Chart.Container config={{ value: { label: 'Pledged', color: 'var(--chart-1)' } }} class="aspect-auto h-[240px] w-full" role="img" aria-label={`Funding per ${grainWord}, ${fwindow[0]!.label} to ${fwindow.at(-1)!.label}`}>
+              <LineChart
+                data={fwindow.map((p) => ({ date: p.date, value: p.usd, label: p.label }))}
+                x="date"
+                series={[{ key: 'value', label: 'Pledged', value: 'value', color: 'var(--color-value)' }]}
+                padding={{ top: 8, right: 8, bottom: 20, left: 48 }}
+                grid={{ x: false, y: true }}
+                props={{
+                  spline: { strokeWidth: 2 },
+                  xAxis: { format: (d: Date) => fmtWhen(d, grain === 'day' ? { month: 'short', day: 'numeric' } : grain === 'year' ? { year: 'numeric' } : { month: 'short', year: '2-digit' }), ticks: 6, tickOcclusion: true },
+                  yAxis: { format: (n: number) => (n ? big(n) : '0'), ticks: 4 },
+                }}
+              >
+                {#snippet tooltip()}
+                  <Chart.Tooltip labelFormatter={(d: Date) => fwindow.find((p) => p.date.getTime() === d.getTime())?.label ?? fmtWhen(d, { month: 'short', year: 'numeric' })} indicator="line">
+                    {#snippet formatter({ value, name })}
+                      <div class="flex w-full items-center justify-between gap-3">
+                        <span class="text-muted-foreground">{name}</span>
+                        <span class="text-foreground font-mono font-medium tabular-nums">{big(Number(value))}</span>
+                      </div>
+                    {/snippet}
+                  </Chart.Tooltip>
+                {/snippet}
+              </LineChart>
+            </Chart.Container>
+          {:else}
+            <Empty class="py-3 text-xs">No data for this range.</Empty>
           {/if}
-          <Stat value={big(shown)} label={`last ${funding.points.length} ${range}s`} />
-          {#if fstats?.average}<Stat value={big(fstats.average)} label={`average per ${range}`} />{/if}
-          {#if fstats?.best}<Stat value={big(fstats.best.usd)} label={`best ${range} shown · ${fstats.best.key}`} />{/if}
-          {#if fstats?.projected && period}<Stat value={big(fstats.projected)} valueTone={fstats.projected > fstats.average ? 'ok' : fstats.average > 0 && fstats.projected < fstats.average ? 'warn' : null} label={`this ${range} on pace for`} />{/if}
-          {#if all.length && funding.fans}<Stat value={own(`${(sum.value / (funding.funds / funding.fans)).toFixed(1)}×`)} label="you vs the average citizen" />{/if}
-        </StatGrid>
-        <Card.Root size="sm" class="min-w-0 shadow-none">
-          <Card.Content>{@render bars(fundingBars, big, 220, 'Pledged')}</Card.Content>
-        </Card.Root>
-        <span class="text-muted-foreground text-xs">The current {range} is still running (yellow). Gross pledges before melts.</span>
-      {:else if fundingBusy}
-        <div class="text-muted-foreground">Loading…</div>
-      {/if}
+        </Card.Content>
+      </Card.Root>
+      <span class="text-muted-foreground text-xs">Completed {grainWord}s only (UTC); the running one is in the tiles. Gross pledges before melts. Nov 2012 includes everything raised before the tracker started.</span>
+
+      <!-- compare years -->
+      <div class="grid gap-2 border-t pt-3">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="text-sm font-semibold">Compare years</span>
+          <Segmented options={[{ id: 'overlay', label: 'Month by month' }, { id: 'yearly', label: 'Yearly totals' }]} bind:value={cmpMode} ariaLabel="Comparison view" size="sm" />
+          {#if cmpMode === 'overlay'}
+            <div class="flex items-center gap-2">
+              <Switch id="funding-cumulative" bind:checked={cumulativeYears} size="sm" />
+              <Label for="funding-cumulative" class="text-muted-foreground cursor-pointer text-xs font-normal">Running total</Label>
+            </div>
+          {/if}
+        </div>
+        {#if cmpMode === 'overlay'}
+          <div class="flex flex-wrap gap-1" role="group" aria-label="Years to compare">
+            {#each [...yearIds].reverse() as y (y)}
+              {@const on = cmpYears.includes(y)}
+              <Button variant={on ? 'secondary' : 'ghost'} size="xs" aria-pressed={on} onclick={() => toggleYear(y)}>
+                <span class="inline-block size-2 rounded-full" style={`background:${on ? yearColor(y) : 'var(--muted-foreground)'}`}></span>{y}
+              </Button>
+            {/each}
+          </div>
+          {#if cmpYears.length}
+            <Chart.Container config={overlayConfig} class="aspect-auto h-[260px] w-full" role="img" aria-label={`Funding by month for ${cmpYears.join(', ')}`}>
+              <LineChart
+                data={overlay}
+                x="m"
+                series={cmpYears.map((y) => ({ key: `y${y}`, label: String(y), value: `y${y}`, color: `var(--color-y${y})` }))}
+                padding={{ top: 8, right: 8, bottom: 20, left: 48 }}
+                grid={{ x: false, y: true }}
+                props={{
+                  spline: { strokeWidth: 2 },
+                  xAxis: { format: (m: number) => overlay[m - 1]?.label ?? '', ticks: 12 },
+                  yAxis: { format: (n: number) => (n ? big(n) : '0'), ticks: 4 },
+                }}
+              >
+                {#snippet tooltip()}
+                  <Chart.Tooltip labelFormatter={(m: number) => overlay[m - 1]?.label ?? ''} indicator="line">
+                    {#snippet formatter({ value, name })}
+                      <div class="flex w-full items-center justify-between gap-3">
+                        <span class="text-muted-foreground">{name}</span>
+                        <span class="text-foreground font-mono font-medium tabular-nums">{value == null ? '—' : big(Number(value))}</span>
+                      </div>
+                    {/snippet}
+                  </Chart.Tooltip>
+                {/snippet}
+              </LineChart>
+            </Chart.Container>
+          {:else}
+            <Empty class="py-3 text-xs">Pick a year above.</Empty>
+          {/if}
+        {:else if yearlyLine.length > 1}
+          <Chart.Container config={{ value: { label: 'Raised', color: 'var(--chart-1)' } }} class="aspect-auto h-[240px] w-full" role="img" aria-label="Funding per year">
+            <LineChart
+              data={yearlyLine}
+              x="x"
+              series={[{ key: 'value', label: 'Raised', value: 'value', color: 'var(--color-value)' }]}
+              padding={{ top: 8, right: 8, bottom: 20, left: 48 }}
+              grid={{ x: false, y: true }}
+              props={{
+                spline: { strokeWidth: 2 },
+                xAxis: { format: (y: number) => String(y), ticks: yearlyLine.length },
+                yAxis: { format: (n: number) => (n ? big(n) : '0'), ticks: 4 },
+              }}
+            >
+              {#snippet tooltip()}
+                <Chart.Tooltip labelFormatter={(y: number) => `${y}${yearlyLine.find((r) => r.x === y)?.partial ? ' (so far)' : ''}`} indicator="line">
+                  {#snippet formatter({ value, name })}
+                    <div class="flex w-full items-center justify-between gap-3">
+                      <span class="text-muted-foreground">{name}</span>
+                      <span class="text-foreground font-mono font-medium tabular-nums">{big(Number(value))}</span>
+                    </div>
+                  {/snippet}
+                </Chart.Tooltip>
+              {/snippet}
+            </LineChart>
+          </Chart.Container>
+        {/if}
+
+        <Table.Root class="text-xs">
+          <Table.Header>
+            <Table.Row>
+              <Table.Head>Year</Table.Head>
+              <Table.Head class="text-right">Raised</Table.Head>
+              <Table.Head class="text-right">vs year before</Table.Head>
+              <Table.Head class="text-right">%</Table.Head>
+            </Table.Row>
+          </Table.Header>
+          <Table.Body>
+            {#each [...years].reverse() as r (r.year)}
+              {@const d = r.ytd ? r.ytd.delta : r.delta}
+              {@const p = r.ytd ? r.ytd.pct : r.pct}
+              <Table.Row>
+                <Table.Cell>
+                  {r.year}
+                  {#if r.ytd}<span class="text-muted-foreground"> · to {r.ytd.through.slice(5)} vs same span {r.year - 1} ({big(r.ytd.prev)})</span>{:else if r.partial}<span class="text-muted-foreground"> · from {bundled.start.slice(5)}</span>{/if}
+                </Table.Cell>
+                <Table.Cell class="text-right font-mono tabular-nums">{big(r.usd)}</Table.Cell>
+                <Table.Cell class={cn('text-right font-mono tabular-nums', d != null && (d >= 0 ? 'text-success' : 'text-destructive'))}>{fmtDelta(d)}</Table.Cell>
+                <Table.Cell class={cn('text-right font-mono tabular-nums', p != null && (p >= 0 ? 'text-success' : 'text-destructive'))}>{fmtPct(p)}</Table.Cell>
+              </Table.Row>
+            {/each}
+          </Table.Body>
+        </Table.Root>
+      </div>
+      {#if !funding && fundingBusy}<div class="text-muted-foreground">Loading…</div>{/if}
     </Card.Content>
   </Card.Root>
 </div>
