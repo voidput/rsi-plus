@@ -1,4 +1,5 @@
 import { browser, storage } from '#imports';
+import { matchInfo, type CatalogShip, type MatchHow } from './store';
 
 /**
  * Settings → Debug: one JSON file with everything RSI+ keeps in this browser (local + sync storage), for bug reports.
@@ -21,7 +22,7 @@ const PROFILES = /^(incognito\.)?profiles$/;
 /** Parked account data per saved login (`profileData.<id>`): the key carries the handle. */
 const PROFILE_DATA = /^((?:incognito\.)?profileData\.).+$/;
 /** Public store data (catalog, paints, listings, store log): most of the file and nothing of yours — summarized unless asked for. */
-const STORE = /^(incognito\.)?(catalog|paints|storeItems|storeSnapshot|storeLog|saleHistory|priceHistory|funding|impoundCache|intelCache)$/;
+const STORE = /^(incognito\.)?(catalog|paints|storeItems|storeSnapshot|storeLog|saleHistory|priceHistory|funding|fundingLog|impoundCache|intelCache)$/;
 /** A JWT-looking value is a token whatever its key. */
 const JWT = /^eyJ[\w-]+\.[\w-]+\./;
 
@@ -76,8 +77,41 @@ export interface DebugFile {
   browser: string;
   locale: string;
   names: boolean;
+  /** How each hangar hull name matched RSI's ship catalog, worst first (`shipMatches`). */
+  shipMatches: ShipMatchRow[];
   local: unknown;
   sync: unknown;
+}
+
+export interface ShipMatchRow {
+  /** Hull name as the hangar lists it. */
+  title: string;
+  /** `none`: no catalog ship. Else `MatchHow` (`near` = stand-in, data from `near`). */
+  how: MatchHow | 'none';
+  /** Catalog ship it became (the stand-in's own name for `near`). */
+  ship: string | null;
+  near?: string;
+  /** Pledges listing it. */
+  count: number;
+}
+
+const HOW_RANK: Record<ShipMatchRow['how'], number> = { none: 0, near: 1, words: 2, contains: 3, exact: 4 };
+/**
+ * Every distinct hull name in the saved hangar against the saved catalog, as `matchShip` resolves it today — so a "my
+ * F7A shows as an F7C" report shows which rule picked what, without the store data in the file. Public ship names only.
+ */
+export function shipMatches(local: Record<string, unknown>): ShipMatchRow[] {
+  const pledges = (local.hangar as { pledges?: { ships?: string[] }[] } | undefined)?.pledges;
+  const ships = (local.catalog as { ships?: CatalogShip[] } | undefined)?.ships;
+  if (!Array.isArray(pledges) || !Array.isArray(ships)) return [];
+  const counts = new Map<string, number>();
+  for (const p of pledges) for (const t of Array.isArray(p.ships) ? p.ships : []) counts.set(t, (counts.get(t) ?? 0) + 1);
+  return [...counts]
+    .map(([title, count]): ShipMatchRow => {
+      const m = matchInfo(title, ships);
+      return { title, how: m?.how ?? 'none', ship: m?.ship.name ?? null, ...(m?.ship.near ? { near: m.ship.near.name } : {}), count };
+    })
+    .sort((a, b) => HOW_RANK[a.how] - HOW_RANK[b.how] || a.title.localeCompare(b.title));
 }
 
 export async function buildDebugFile(names = false, store = false): Promise<DebugFile> {
@@ -88,6 +122,7 @@ export async function buildDebugFile(names = false, store = false): Promise<Debu
     browser: navigator.userAgent,
     locale: `${navigator.language} · ${Intl.NumberFormat().resolvedOptions().locale} · ${Intl.DateTimeFormat().resolvedOptions().timeZone}`,
     names,
+    shipMatches: shipMatches(local as Record<string, unknown>),
     local: redact(local, names, store),
     sync: redact(sync, names, store),
   };

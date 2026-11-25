@@ -15,3 +15,6 @@ export const REFERRAL_LEADS: readonly ReferralLead[] = [{ name: 'Zedwil', id: 'S
 export const REFERRAL_ROTATE_MS = 10_000;
 
 export const enlistUrl = (code: string) => `https://www.robertsspaceindustries.com/enlist?referral=${encodeURIComponent(code)}`;
+
+/** The RSI+ / StarOrg Tools Discord invite, where bug reports (debug files) go. */
+export const DISCORD_URL = 'https://discord.com/invite/BtJST8Hj7E';

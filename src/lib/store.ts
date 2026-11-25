@@ -67,6 +67,12 @@ export interface CatalogShip {
   /** `wiki`: a hull RSI's upgrade catalog doesn't list (Kraken, Javelin…), MSRP from starcitizen.tools (`EXTRA_SHIPS`). */
   msrpSource?: 'wiki';
   /**
+   * Set on a stand-in `matchShip` makes for a hangar hull no catalog ship is (a model code no catalog name has:
+   * F7A Hornet Mk I, C8 Pisces): named as the hangar names it, with maker / role / MSRP / picture borrowed from `near`,
+   * the catalog hull of the same line. Never in the catalog array; its id is negative and stable per name.
+   */
+  near?: { id: number; name: string };
+  /**
    * Last CCU price seen below MSRP (`lib/price-history.ts` `withExpected`): what a "wait for a sale" step is priced
    * at. Never saved with the catalog — set on the copy the planner works with.
    */
@@ -213,25 +219,47 @@ export function memoFor<T>(cache: WeakMap<object, Map<string, T>>, ships: object
   return v;
 }
 
-const matched = new WeakMap<object, Map<string, CatalogShip | null>>();
 /**
  * Find the catalog ship a free-text name refers to: exact key, then the longest catalog name contained in it, then
  * (hangar names drop model codes: "Wolf" for "L-21 Wolf") the catalog name that is the text with only a model code
  * in front — shortest wins ("Wolf" → L-21 Wolf, not L-22 Alpha Wolf).
  */
 export function matchShip(name: string, ships: CatalogShip[]): CatalogShip | null {
-  return memoFor(matched, ships, name, () => findShip(name, ships));
+  return matchInfo(name, ships)?.ship ?? null;
 }
-function findShip(name: string, ships: CatalogShip[]): CatalogShip | null {
+
+/**
+ * How `matchShip` got its answer: `exact` (same name), `contains` (a catalog name inside the text: "Cutlass Black -
+ * LTI"), `words` (the catalog name only adds model-code bits: "Wolf" → L-21 Wolf), `near` (no catalog hull has the
+ * text's model code: a stand-in, see `CatalogShip.near`). Anything but `exact` is worth a look when a ship is wrong.
+ */
+export type MatchHow = 'exact' | 'contains' | 'words' | 'near';
+export interface ShipMatch {
+  ship: CatalogShip;
+  how: MatchHow;
+}
+const matchedInfo = new WeakMap<object, Map<string, ShipMatch | null>>();
+export function matchInfo(name: string, ships: CatalogShip[]): ShipMatch | null {
+  return memoFor(matchedInfo, ships, name, () => findShip(name, ships));
+}
+/** Model codes in a key: "f7a", "c8r", "hm6", "a2" (letters then digits); "l 21" splits into bits and counts as none. */
+const codesOf = (toks: string[]) => toks.filter((t) => /^[a-z]+\d+[a-z]*$/.test(t));
+/** Stable negative id per stand-in name, clear of RSI's ids and `EXTRA_SHIPS` (-9xxx). */
+function standInId(key: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < key.length; i++) h = Math.imul(h ^ key.charCodeAt(i), 16777619);
+  return -(1_000_000 + ((h >>> 0) % 1_000_000_000));
+}
+function findShip(name: string, ships: CatalogShip[]): ShipMatch | null {
   const k = shipKey(name);
   if (!k) return null;
   const ix = indexOf(ships);
   const exact = ix.byKey.get(k);
-  if (exact) return exact;
+  if (exact) return { ship: exact, how: 'exact' };
   let best: ShipEntry | null = null;
   const padded = ` ${k} `;
   for (const e of ix.entries) if (e.key && padded.includes(e.padded) && (!best || e.key.length > best.key.length)) best = e;
-  if (best) return best.ship;
+  if (best) return { ship: best.ship, how: 'contains' };
   // Every word of the text is in the catalog name and what the catalog adds is only model-code bits ("Wolf" or
   // "Wolf L-21" → "L-21 Wolf"; never "L-22 Alpha Wolf", which adds a real word). Shortest catalog name wins.
   // Words no catalog name uses ("Starlifter" in "Hercules Starlifter C2", RSI's older hangar spelling) can't decide
@@ -244,16 +272,30 @@ function findShip(name: string, ships: CatalogShip[]): CatalogShip | null {
     if (!e.toks.filter((t) => !want.includes(t)).every((t) => MODEL_BIT.test(t))) continue;
     if (!best || e.toks.length < best.toks.length || (e.toks.length === best.toks.length && e.ship.name.length < best.ship.name.length)) best = e;
   }
-  if (best) return best.ship;
-  // Last resort: same words once model codes are dropped on both sides ("F7A Hornet Mk II", a hull the store doesn't
-  // sell, → F7C Hornet Mk II — same line, same paints; never a Mk I). Shortest catalog name wins.
+  if (best) return codeCheck(name, k, best);
+  // Last resort: same words once model codes are dropped on both sides ("F7A Hornet Mk I", a hull the store doesn't
+  // sell, → F7C Hornet Mk I — same line, same paints; never a Mk II). Shortest catalog name wins. When the text has a
+  // model code the catalog hull doesn't, it is another hull: a stand-in under the text's own name, not the F7C.
   const wantBare = bareOf(want);
   if (!wantBare) return null;
   for (const e of ix.entries) {
     if (e.bare !== wantBare) continue;
     if (!best || e.ship.name.length < best.ship.name.length) best = e;
   }
-  return best?.ship ?? null;
+  return best ? codeCheck(name, k, best) : null;
+}
+/**
+ * A word-level match stands only if the text's model codes are the catalog hull's: "F7A Hornet Mk I" (f7a, a code no
+ * catalog name uses, so the word match drops it) is not the F7C Hornet Mk I. Then it's a stand-in under its own name.
+ */
+function codeCheck(name: string, k: string, best: ShipEntry): ShipMatch {
+  const mine = codesOf(k.split(' '));
+  const theirs = codesOf(best.toks);
+  if (!mine.length || mine.every((c) => theirs.includes(c))) return { ship: best.ship, how: 'words' };
+  const near = best.ship;
+  const standIn: CatalogShip = { ...near, id: standInId(k), name: name.trim().replace(/\s+/g, ' '), link: '', standalone: [], ccu: [], near: { id: near.id, name: near.name } };
+  delete standIn.expect;
+  return { ship: standIn, how: 'near' };
 }
 const bareOf = (toks: string[]) => toks.filter((t) => !CODE_BIT.test(t)).join(' ');
 interface ShipEntry {

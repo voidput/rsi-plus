@@ -43,6 +43,7 @@ exports[`fleet export (catalog-drift fixture) > is stable across runs and input 
   "ANVL_Carrack_W_C8X	ANVL	Carrack w/C8X",
   "ANVL_Centurion	ANVL	Centurion",
   "ANVL_Crucible	ANVL	Crucible",
+  "ANVL_F7A_Hornet_Mk_II	ANVL	F7A Hornet Mk II",
   "ANVL_F7C_Hornet_Mk_I	ANVL	F7C Hornet Mk I",
   "ANVL_F7C_Hornet_Mk_II	ANVL	F7C Hornet Mk II",
   "ANVL_F7C_Hornet_Wildfire_Mk_I	ANVL	F7C Hornet Wildfire Mk I",

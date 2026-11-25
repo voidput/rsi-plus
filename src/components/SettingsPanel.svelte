@@ -13,6 +13,7 @@
   import TipButton from './TipButton.svelte';
   import LazyTip from './LazyTip.svelte';
   import { LINK } from '@/lib/ui';
+  import { DISCORD_URL } from '@/lib/support';
   import * as Card from '@/components/ui/card';
   import * as ToggleGroup from '@/components/ui/toggle-group';
   import { Input } from '@/components/ui/input';
@@ -316,7 +317,7 @@
   <Card.Root>
     <Card.Header>
       <Card.Title>Debug</Card.Title>
-      <Card.Description>One JSON file with everything RSI+ keeps in this browser, including RSI's raw pledge fields, for bug reports. Tokens and cookies are never in it. Nothing is sent: you share the file yourself.</Card.Description>
+      <Card.Description>One JSON file with everything RSI+ keeps in this browser, including RSI's raw pledge fields, for bug reports. Tokens and cookies are never in it. Nothing is sent: you share the file yourself, e.g. in the <a class={LINK} href={DISCORD_URL} target="_blank" rel="noopener">RSI+ Discord</a>.</Card.Description>
     </Card.Header>
     <Card.Content class="grid gap-3">
       <SwitchRow id="set-debug-names" label="Include names" hint="Your handle, friends' handles, ship names you gave and notes. Off: they are written as [masked]." checked={debugNames} onchange={(v) => (debugNames = v)} />

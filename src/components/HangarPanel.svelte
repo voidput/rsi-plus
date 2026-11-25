@@ -4,7 +4,7 @@
   import { hangarCsv, hangarUrl, nameablesOf, stackPledges, totals, type Pledge, type PledgeStack, type PledgeType } from '@/lib/hangar';
   import { xplorRows } from '@/lib/export';
   import { canMelt, copiesElsewhere, duplicatePlan, holdersIndex, keptCounts, lossWith, meltSummary, targetPlan } from '@/lib/melt';
-  import { categorize, inventory, ownedShipsWithPaints, paintCopiesNeeded, paintStatus, seriesOf, shipGroups, storePaintIndex, upgradedFrom, type GameShip } from '@/lib/items';
+  import { categorize, inventory, ownedShipIds, ownedShipsWithPaints, paintCopiesNeeded, paintStatus, seriesOf, shipGroups, storePaintIndex, upgradedFrom, type GameShip } from '@/lib/items';
   import { storeLinksFor } from '@/lib/paints';
   import { applyFacets, type FacetValues } from '@/lib/facets';
   import { isGifted, pledgeFacets, pledgeRanges, PLEDGE_PRIMARY, PLEDGE_TYPES as TYPES } from '@/lib/pledge-facets';
@@ -411,7 +411,7 @@
   const inv = $derived.by(() => {
     const rows = inventory(all, cat?.ships ?? []);
     const fleet = ownedShipsWithPaints(rows, game, cat?.ships ?? []);
-    return { rows, fleet, ownedIds: new Set(fleet.map((f) => f.ship.id)) };
+    return { rows, fleet, ownedIds: ownedShipIds(fleet.map((f) => f.ship)) };
   });
   const keep = $derived(paintCopiesNeeded(inv.rows, inv.fleet));
   // ---- event / flair sets: items.seriesOf names the event or collection each non-ship item belongs to ----

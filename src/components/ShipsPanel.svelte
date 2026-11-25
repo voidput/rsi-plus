@@ -10,6 +10,7 @@
     fitsLabel as fitsLabelOf,
     inventory,
     itemsCsv,
+    ownedShipIds,
     ownedShipsWithPaints,
     paintGroups,
     shipsFor,
@@ -34,6 +35,7 @@
   import Thumb from './Thumb.svelte';
   import Tag from './Tag.svelte';
   import HintBadge from './HintBadge.svelte';
+  import MatchWarn from './MatchWarn.svelte';
   import TipButton from './TipButton.svelte';
   import WikiLink from './WikiLink.svelte';
   import { wikiPageUrl } from '@/lib/wiki';
@@ -242,7 +244,7 @@
       const seen = new Set(rowsOut.map((r) => r.store?.id).filter((x) => x != null));
       // Store paints for a variant you don't own (you have a Hull B; the store sells Hull A / Hull C paints) get their
       // own "no ship owned" group per variant instead of padding the family you do own.
-      const ownedIds = new Set(g.owned.map((o) => o.ship.id));
+      const ownedIds = ownedShipIds(g.owned.map((o) => o.ship));
       const variants = new Map<string, { label: string; rows: Row[]; ships: CatalogShip[] }>();
       for (const sp of storeByFam.get(fam === 'packs' ? '~' : fam) ?? []) {
         if (seen.has(sp.id) || ownedStoreIds.has(sp.id)) continue;
@@ -597,7 +599,7 @@
                         <div class="flex items-center gap-2.5">
                           <Thumb src={f.ship.thumb} name={f.ship.name} width={64} height={36} />
                           <div>
-                            <div class="flex items-center gap-0.5"><strong>{f.ship.name}</strong><WikiLink href={wikiPageUrl(f.ship.name)} name={f.ship.name} /></div>
+                            <div class="flex items-center gap-0.5"><strong>{f.ship.name}</strong><WikiLink href={wikiPageUrl(f.ship.name)} name={f.ship.name} />{#if f.ship.near}<MatchWarn name={f.ship.name} near={f.ship.near.name} />{/if}</div>
                             {#if (f.ship.flyable && stageOf(f.ship.flyable) !== 'ready') || f.ship.size}
                               <div class="mt-0.5 flex flex-wrap gap-0.5">
                                 {#if f.ship.flyable && stageOf(f.ship.flyable) !== 'ready'}<Tag kind="stage" value={f.ship.flyable} size="xs" />{/if}
@@ -634,7 +636,7 @@
                 </Table.Body>
               </Table.Root>
               {#if unmatchedShips.length}
-                <p class="text-muted-foreground text-[11px]">Not matched to a store ship (no paints / compare): {unmatchedShips.map((r) => r.title).join(', ')}</p>
+                <p class="text-muted-foreground flex flex-wrap items-center gap-1 text-[11px]">Not matched to a store ship (no paints / compare): {#each unmatchedShips as r, i (r.key)}<span class="inline-flex items-center gap-0.5">{r.title}<MatchWarn name={r.title} />{i < unmatchedShips.length - 1 ? ',' : ''}</span>{/each}</p>
               {/if}
             </Card.Content>
           </Card.Root>

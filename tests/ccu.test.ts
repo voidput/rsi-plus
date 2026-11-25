@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { WAIT_RISK, chainEvents, chainGoal, dropBakedExcludes, mergeGoals, planChains, withPlans, DEFAULT_PLAN_OPTIONS, excludeReserved, legExclude, ownedCcus, ownedHulls, ownedShips, plan, planFleet, applyAlternative, farthestReachable, planAlternatives, planGraph, plannerExclude, reservedRefs, savedVsMsrp, STORE_START, type OwnedCcu, type PlanOptions, type SavedChain } from '@/lib/ccu';
 import { lastSale, lowestOffer, matchShip, recordSales, wishlistEvents, withExtraShips, type CatalogShip, type Sku } from '@/lib/store';
+import { paintLine } from '@/lib/paints';
 
 const sku = (title: string, price: number, extra: Partial<Sku> = {}): Sku => ({ id: price, title, price, available: true, stock: null, ...extra });
 const ship = (id: number, name: string, msrp: number, ccu: Sku[] = [], standalone: Sku[] = []): CatalogShip => ({
@@ -98,6 +99,11 @@ describe('ccu planner', () => {
     expect(matchShip('Kruger Wolf', wolves)?.id).toBe(90); // a word no catalog name uses (the maker) is ignored
     expect(matchShip('Hornet', wolves)?.id).toBe(92);
     expect(matchShip('Nothing Here', wolves)).toBeNull();
+    // The F7A Mk II (a limited upgrade, not in RSI's catalog) is its own hull once the extra ships are in, not the F7C Mk II.
+    const mk2 = withExtraShips([...ships, { ...ships[0]!, id: 94, name: 'F7C Hornet Mk II' }]);
+    expect(matchShip('F7A Hornet Mk II', mk2)?.id).toBe(-9006);
+    expect(matchShip('F7C Hornet Mk II', mk2)?.id).toBe(94);
+    expect(paintLine('F7A Hornet Mk II', mk2)).toBe(paintLine('F7C Hornet Mk II', mk2));
   });
 
   it('steps preference: same cost, fewer steps by default, more steps on request', () => {
