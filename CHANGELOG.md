@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.0](https://github.com/voidput/rsi-plus/compare/v0.27.0...v0.28.0) (2026-11-26)
+
+
+### Features
+
+* Impound deals and search, game-data ship and paint fits, catalog cart ([0652bf1](https://github.com/voidput/rsi-plus/commit/0652bf14c91d98925b4647f4c673ba8b5c9d7fe7))
+
 ## [0.27.0](https://github.com/voidput/rsi-plus/compare/v0.26.0...v0.27.0) (2026-11-25)
 
 
