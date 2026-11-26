@@ -53,6 +53,8 @@
   cursor: pointer;
 }
 .rp-imp-btn { border-radius: 6px; padding: 4px 10px; }
+.rp-imp-btn:disabled { opacity: 0.4; cursor: default; }
+.rp-imp-pager { justify-content: center; padding-top: 8px; }
 .rp-imp-btn.primary { border-color: rgb(60 200 255 / 0.5); color: var(--rp-accent); }
 .rp-imp-chip.on { background: rgb(60 200 255 / 0.18); border-color: rgb(60 200 255 / 0.6); color: var(--rp-accent); }
 .rp-imp-chip:focus-visible, .rp-imp-btn:focus-visible, .rp-imp-input:focus-visible, .rp-imp-select:focus-visible { outline: 2px solid var(--rp-accent); outline-offset: 1px; }
@@ -104,3 +106,31 @@
 .rp-imp-contents { margin: 0; padding: 0 0 0 4px; list-style: none; columns: 2 220px; }
 .rp-imp-contents li { color: var(--rp-muted); }
 .rp-imp-contents li.have { color: var(--rp-good); }
+
+/* Deal / not on RSI / buyback lines */
+.rp-imp-deal, .rp-imp-gone, .rp-imp-bb { display: inline-block; margin: 2px 4px 0 0; padding: 1px 6px; border-radius: 4px; font-size: 11px; line-height: 1.5; }
+.rp-imp-deal { background: rgb(60 200 120 / 0.16); color: rgb(110 230 150); }
+.rp-imp-deal.best { background: rgb(255 200 60 / 0.18); color: rgb(255 210 90); font-weight: 600; }
+.rp-imp-gone { background: rgb(180 120 255 / 0.16); color: rgb(200 165 255); }
+.rp-imp-bb { background: rgb(255 255 255 / 0.08); color: inherit; }
+.rp-imp-bb.good { background: rgb(60 200 120 / 0.16); color: rgb(110 230 150); }
+.rp-imp-table td .rp-imp-deal, .rp-imp-table td .rp-imp-gone, .rp-imp-table td .rp-imp-bb { margin-top: 0; }
+
+/* Pictures and pack tiles */
+.rp-imp-thumb { width: 64px; height: 36px; object-fit: cover; border-radius: 4px; vertical-align: middle; margin-right: 8px; cursor: zoom-in; flex-shrink: 0; }
+.rp-imp-thumb.none { display: inline-block; background: rgb(255 255 255 / 0.05); }
+.rp-imp-table td.listing { display: flex; align-items: flex-start; gap: 0; }
+.rp-imp-preview { position: fixed; z-index: 2147483647; pointer-events: none; background: #0d1117; border: 1px solid rgb(255 255 255 / 0.15); border-radius: 8px; padding: 6px; box-shadow: 0 8px 30px rgb(0 0 0 / 0.6); }
+.rp-imp-preview img { display: block; width: 100%; height: auto; max-height: 70vh; object-fit: contain; border-radius: 4px; }
+.rp-imp-preview .rp-imp-muted { padding: 4px 2px 0; font-size: 12px; }
+.rp-imp-pack { padding: 6px 0; }
+.rp-imp-pack > .rp-imp-row { gap: 14px; font-size: 12px; margin-bottom: 6px; }
+.rp-imp-pack .good { color: var(--rp-good); }
+.rp-imp-tiles { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 6px; }
+.rp-imp-tile { display: flex; gap: 8px; align-items: center; padding: 5px; border: 1px solid rgb(255 255 255 / 0.08); border-radius: 6px; font-size: 12px; }
+.rp-imp-tile.have { border-color: rgb(60 200 120 / 0.4); }
+.rp-imp-tile-img { width: 72px; height: 40px; object-fit: cover; border-radius: 4px; cursor: zoom-in; flex-shrink: 0; }
+.rp-imp-tile-img.none { display: inline-block; background: rgb(255 255 255 / 0.05); }
+.rp-imp-tile.have .rp-imp-tile-name { color: var(--rp-good); }
+.rp-imp-expand { background: none; border: 0; color: var(--rp-accent); cursor: pointer; font-size: 11px; padding: 0; margin-top: 2px; }
+.rp-imp-table tr.packrow td { background: rgb(255 255 255 / 0.02); }

@@ -217,6 +217,8 @@ export const storeItemsItem = storage.defineItem<StoreListing | null>(acct('loca
 /** Chairman's Club status from /account/concierge (per account; null = not Concierge or never read). */
 export const conciergeItem = storage.defineItem<Concierge | null>(acct('local:concierge'), { fallback: null });
 export const paintCatalogItem = storage.defineItem<PaintCatalog | null>('local:paints', { fallback: null });
+/** Store paints last seen on sale, with the price then (`recordPaintSeen`): The Impound's *last at RSI* for paints. */
+export const paintSeenItem = storage.defineItem<import('./store').PaintSeen>('local:paintSeen', { fallback: {} });
 /** Star Citizen crowdfund stats per chart range (public), for the Wallet tab; refreshed hourly when open. */
 /** Store changes log (`lib/storelog.ts`): last copy of each source + the add / remove groups, newest first. */
 export const storeSnapshotItem = storage.defineItem<StoreSnapshot>('local:storeSnapshot', { fallback: {} });

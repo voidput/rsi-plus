@@ -5,6 +5,8 @@
  * The Odin (2026-11) is a $5,000 limited concept pledge sold through the Odin Founders Club, not the store.
  * The F7A Hornet Mk II was a limited upgrade from the F7C Mk II ($175 on starcitizen.tools, 2026-11-25): without it a
  * hangar F7A matched the F7C Mk II. Both take the same Hornet Mk II paints (`paintLine` → hornet).
+ * The F8C Lightning ($300 standalone, $260 warbond on starcitizen.tools, 2026-11-25) is sold only to Wing Commanders and
+ * gold-license holders in time-limited sales; its Executive Edition (a reward, no pledge price) matches it by name.
  * Ids are negative so they never collide with RSI's; `fetchCatalog` adds one only when RSI doesn't list that name.
  */
 import type { CatalogShip } from '../store';
@@ -30,4 +32,5 @@ export const EXTRA_SHIPS: CatalogShip[] = [
   extra(-9004, 'Idris-M', 'Aegis Dynamics', 'Frigate', 1000, 'Flight Ready'),
   extra(-9005, 'Odin', 'Anvil Aerospace', 'Battlecruiser', 5000, 'Concept'),
   extra(-9006, 'F7A Hornet Mk II', 'Anvil Aerospace', 'Medium Fighter', 175, 'Flight Ready'),
+  extra(-9007, 'F8C Lightning', 'Anvil Aerospace', 'Heavy Fighter', 300, 'Flight Ready'),
 ];

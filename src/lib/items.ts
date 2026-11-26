@@ -7,6 +7,7 @@
 import { cell, type Pledge } from './hangar';
 import { itemKey } from './melt';
 import { cutKey, matchShip, memoFor, paintKey, shipKey, type CatalogShip, type StorePaint } from './store';
+import GAME_PAINTS from './data/game-paints.json';
 
 export type Category = 'ship' | 'paint' | 'armor' | 'weapon' | 'fps' | 'component' | 'decoration' | 'hangar' | 'game' | 'insurance' | 'credits' | 'other';
 
@@ -110,7 +111,26 @@ const fitting = new WeakMap<object, Map<string, CatalogShip[]>>();
 export function shipsFor(title: string, ships: CatalogShip[]): CatalogShip[] {
   return [...memoFor(fitting, ships, title, () => findFits(title, ships))];
 }
+/**
+ * Hulls a paint fits by the game's own item ports (`data/game-paints.json`, built by scripts/game-paints.mjs from the
+ * sc-gamedata dumps), as catalog ships. Null when the game data doesn't know the paint (then the title decides).
+ * Hulls the catalog doesn't list (an in-game-only Wikelo variant) drop out; one the catalog matches by name stays.
+ */
+const gameFits = (GAME_PAINTS as { fits: Record<string, string[]> }).fits;
+export function gamePaintFits(title: string, ships: CatalogShip[]): CatalogShip[] | null {
+  const hulls = gameFits[paintKey(title.replace(/^paints?\s*[-–—:]\s*/i, ''))];
+  if (!hulls || !ships.length) return null;
+  const ids = new Set(ships.map((s) => s.id));
+  const out = new Map<number, CatalogShip>();
+  for (const h of hulls) {
+    const s = matchShip(h, ships);
+    if (s && ids.has(s.id)) out.set(s.id, s);
+  }
+  return out.size ? ships.filter((s) => out.has(s.id)) : null; // catalog order, like the title match
+}
 function findFits(title: string, ships: CatalogShip[]): CatalogShip[] {
+  const game = gamePaintFits(title, ships);
+  if (game) return game;
   // RSI paint titles put the hull before a dash ("Cutlass - Black and White Livery"): when that part names a
   // ship, match only it — otherwise colour words in the paint name ("Black") look like variants (Cutlass Black).
   const head = title.split(/\s[-–—:]\s/)[0]!;

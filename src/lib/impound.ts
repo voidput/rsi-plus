@@ -13,9 +13,11 @@
  * The Impound's own pages read too. RSI+ never touches its cart, checkout or account.
  */
 import type { OwnedCcu } from './ccu';
-import type { OwnedShip } from './items';
+import { line, ownedShipIds, shipsFor, type OwnedShip } from './items';
 import { ownedTitleCount, type OwnedTitles } from './owned-counts';
-import { paintKey, type CatalogShip, type StorePaint } from './store';
+import { cleanName, type BuybackItem } from './hangar';
+import { lastSeen, lowestSeen, PRICE_KIND_LABEL, type PriceHistory, type PriceKind } from './price-history';
+import { matchShip, paintKey, type CatalogShip, type PaintSeen, type StorePaint } from './store';
 
 export const IMPOUND_ORIGIN = 'https://theimpound.com';
 /** Optional host asked for by Settings → Integrations → The Impound (wxt.config.ts `optional_host_permissions`). */
@@ -41,8 +43,28 @@ export interface ImpProduct {
   tags: string[];
   /** The store's description as plain text, up to "What you're getting" (where pack contents are named). */
   text?: string;
+  /** The listing's first picture (absolute `https:` Shopify CDN URL); absent on copies cached before it was kept. */
+  image?: string;
   variants: ImpVariant[];
 }
+
+/** A product's first picture from either JSON shape: `images: [{ src }]` (products.json) or `featured_image` / `images: [url]` (.js). */
+export function imageOf(p: any): string | undefined {
+  const first = p?.featured_image ?? p?.image?.src ?? (Array.isArray(p?.images) ? (p.images[0]?.src ?? p.images[0]) : null);
+  if (typeof first !== 'string' || !first) return undefined;
+  const url = first.startsWith('//') ? `https:${first}` : first;
+  return /^https:\/\//.test(url) ? url : undefined;
+}
+/** Shopify CDN resize: the same picture at `width` px (thumbs 120, preview 800). */
+export const sizedImage = (url: string, width: number) => {
+  try {
+    const u = new URL(url);
+    u.searchParams.set('width', String(width));
+    return u.href;
+  } catch {
+    return url;
+  }
+};
 
 /** Plain text of a description's opening part (HTML → text, boilerplate sections dropped, capped). */
 export function descText(html: unknown): string | undefined {
@@ -79,6 +101,7 @@ export function toProduct(p: any, pricesInCents = false): ImpProduct | null {
     vendor: String(p.vendor ?? ''),
     tags: tags.map(String).filter(Boolean),
     ...(descText(p.body_html ?? p.description) ? { text: descText(p.body_html ?? p.description) } : {}),
+    ...(imageOf(p) ? { image: imageOf(p) } : {}),
     variants: p.variants.map((v: any) => ({
       id: Number(v.id),
       title: String(v.title ?? v.public_title ?? ''),
@@ -170,11 +193,25 @@ const cheapest = (skus: { price: number; available: boolean }[]) => {
 };
 
 export interface PriceCtx {
+  /** The ship catalog (one array, so `shipsFor`'s memo holds across rows). */
+  ships: CatalogShip[];
   byId: Map<number, CatalogShip>;
   /** Store paints by `paintKey(name)`. */
   paints: Map<string, StorePaint>;
   /** Single store paints (no packs) by their line ("100 series", "cutlass"), for naming what a pack holds. */
   paintsByLine: Map<string, { name: string; short: string }[]>;
+  /** RSI prices over time per hull, archive included (*last at RSI*, *lowest on record*). */
+  history: PriceHistory;
+  /** Store paints last seen on sale. */
+  paintSeen: PaintSeen;
+  /** Your RSI buyback, by what it would give back (`buybackIndex`). */
+  buyback: Map<string, BuybackHit>;
+}
+/** Extra context for `priceCtx`: everything optional (tests and a fresh install have none of it). */
+export interface PriceExtras {
+  history?: PriceHistory;
+  paintSeen?: PaintSeen;
+  buyback?: BuybackItem[];
 }
 const PACKISH = /\b(pack|packs|collection|bundle|set)\b/i;
 /** RSI paint names are "<Line> - <Name> Paint" ("Dragonfly - Coalfire Paint"): → line, short name ("coalfire"). */
@@ -190,7 +227,7 @@ const lineKey = (s: string) => {
   const n = /^(\d)\d\d[a-z]?\b/.exec(k);
   return n ? `${n[1]}00 series` : k;
 };
-export const priceCtx = (ships: CatalogShip[], paints: StorePaint[]): PriceCtx => {
+export const priceCtx = (ships: CatalogShip[], paints: StorePaint[], extra: PriceExtras = {}): PriceCtx => {
   const paintsByLine = new Map<string, { name: string; short: string }[]>();
   for (const p of paints) {
     if (PACKISH.test(p.name)) continue;
@@ -200,8 +237,123 @@ export const priceCtx = (ships: CatalogShip[], paints: StorePaint[]): PriceCtx =
     if (!list.some((x) => x.short.toLowerCase() === parts.short.toLowerCase())) list.push({ name: p.name, short: parts.short });
     paintsByLine.set(parts.line, list);
   }
-  return { byId: new Map(ships.map((s) => [s.id, s])), paints: new Map(paints.map((p) => [paintKey(p.name), p])), paintsByLine };
+  return {
+    ships,
+    byId: new Map(ships.map((s) => [s.id, s])),
+    paints: new Map(paints.map((p) => [paintKey(p.name), p])),
+    paintsByLine,
+    history: extra.history ?? {},
+    paintSeen: extra.paintSeen ?? {},
+    buyback: buybackIndex(extra.buyback ?? [], ships),
+  };
 };
+
+/* ---------------------------------------------------------------- RSI status, deals, buyback ---------------------------------------------------------------- */
+
+/** An entry of your RSI buyback giving back the same thing; `cents` = its buy-back price when its page was read. */
+export interface BuybackHit {
+  id: number;
+  name: string;
+  cents: number | null;
+  url: string | null;
+}
+/**
+ * Buyback entries by what they give back: `ccu:<from>-<to>` (an upgrade), `ship:<id>` (a pledge of one hull and
+ * nothing else that counts), `paint:<paintKey>` (a paint alone). The cheapest known price wins a key.
+ */
+export function buybackIndex(items: BuybackItem[], ships: CatalogShip[]): Map<string, BuybackHit> {
+  const out = new Map<string, BuybackHit>();
+  const put = (key: string, b: BuybackItem) => {
+    const hit: BuybackHit = { id: b.id, name: cleanName(b.name), cents: b.price ?? null, url: b.url };
+    const cur = out.get(key);
+    if (!cur || (hit.cents != null && (cur.cents == null || hit.cents < cur.cents))) out.set(key, hit);
+  };
+  for (const b of items) {
+    if (b.upgrade?.fromId != null && b.upgrade.toId != null) put(`ccu:${b.upgrade.fromId}-${b.upgrade.toId}`, b);
+    else if (b.type === 'paint') put(`paint:${paintKey(cleanName(b.name))}`, b);
+    else if (b.type === 'ship' && ships.length) {
+      const hulls = (b.items ?? []).filter((i) => /ship|vehicle/i.test(i.kind));
+      if (hulls.length > 1) continue;
+      const s = matchShip(hulls[0]?.title ?? cleanName(b.name), ships);
+      if (s) put(`ship:${s.id}`, b);
+    }
+  }
+  return out;
+}
+export function buybackFor(p: ImpProduct, info: SkuInfo, ctx: PriceCtx): BuybackHit | null {
+  if (!ctx.buyback.size) return null;
+  if (info.kind === 'ccu' && info.from != null) return ctx.buyback.get(`ccu:${info.from}-${info.ships[0]}`) ?? null;
+  if (info.kind === 'ship') return ctx.buyback.get(`ship:${info.ships[0]}`) ?? null;
+  if (info.kind === 'paint' || /^paint$/i.test(p.type)) return ctx.buyback.get(`paint:${paintKey(bareTitle(p.title))}`) ?? null;
+  return null;
+}
+
+/** Whether RSI sells it today, and when it last did (with the price then) when it doesn't. */
+export interface RsiStatus {
+  /** true: on RSI's store today · false: not · null: RSI+ can't tell (gear, other, no catalog yet). */
+  sold: boolean | null;
+  last?: { at: number; cents: number; what: string; archived: boolean };
+}
+const liveSku = (k: { available: boolean; stock?: number | null }) => k.available && k.stock !== 0;
+const shipSold = (s: CatalogShip) => s.standalone.some(liveSku) || s.ccu.some(liveSku);
+const SHIP_KINDS: PriceKind[] = ['ship', 'ship-wb', 'ccu', 'ccu-wb'];
+const CCU_KINDS: PriceKind[] = ['ccu', 'ccu-wb'];
+const seenAt = (r: { kind: PriceKind; to: number; p: number; src?: string }, cents = r.p) => ({ at: r.to, cents, what: PRICE_KIND_LABEL[r.kind], archived: !!r.src });
+
+export function rsiStatus(p: ImpProduct, info: SkuInfo, ctx: PriceCtx): RsiStatus {
+  if (!ctx.ships.length) return { sold: null };
+  if (info.kind === 'ccu' && info.from != null) {
+    const to = ctx.byId.get(info.ships[0]!);
+    const from = ctx.byId.get(info.from);
+    if (!to) return { sold: false };
+    if (to.ccu.some(liveSku)) return { sold: true };
+    const r = lastSeen(ctx.history, to.id, CCU_KINDS);
+    // A CCU's price is the target's value: what this upgrade cost then is that minus the from ship's MSRP.
+    return { sold: false, ...(r && from?.msrp && r.p > from.msrp ? { last: { ...seenAt(r, r.p - from.msrp), what: `${PRICE_KIND_LABEL[r.kind]} to ${to.name}` } } : {}) };
+  }
+  if (info.kind === 'ship') {
+    const s = ctx.byId.get(info.ships[0]!);
+    if (!s) return { sold: false };
+    if (shipSold(s)) return { sold: true };
+    const r = lastSeen(ctx.history, s.id, SHIP_KINDS);
+    return { sold: false, ...(r ? { last: seenAt(r) } : {}) };
+  }
+  if (info.kind === 'pack') {
+    const ships = info.ships.map((id) => ctx.byId.get(id));
+    return { sold: ships.every((s) => !!s && shipSold(s)) };
+  }
+  if (info.kind === 'paint' || /^paint$/i.test(p.type)) {
+    if (!ctx.paints.size) return { sold: null };
+    const key = paintKey(bareTitle(p.title));
+    if (ctx.paints.get(key)?.available) return { sold: true };
+    const seen = ctx.paintSeen[key];
+    return { sold: false, ...(seen ? { last: { at: seen.at, cents: seen.p, what: 'Store paint', archived: false } } : {}) };
+  }
+  return { sold: null };
+}
+
+/**
+ * Deal tiers: `best` — under the lowest price RSI ever asked on record (archive + RSI+'s readings; warbond included);
+ * `below` — under what RSI charges today. Null: neither, or nothing to compare.
+ */
+export type DealTier = 'best' | 'below';
+export function dealOf(info: SkuInfo, price: number, mk: { cents: number; pct: number } | null, ctx: PriceCtx): { tier: DealTier; note: string } | null {
+  let low: { cents: number; what: string; at: number } | null = null;
+  if (info.kind === 'ship') {
+    const r = lowestSeen(ctx.history, info.ships[0]!, ['ship', 'ship-wb', 'msrp']);
+    if (r) low = { cents: r.p, what: PRICE_KIND_LABEL[r.kind], at: r.to };
+  } else if (info.kind === 'ccu' && info.from != null) {
+    const from = ctx.byId.get(info.from);
+    const r = lowestSeen(ctx.history, info.ships[0]!, CCU_KINDS);
+    if (r && from?.msrp && r.p > from.msrp) low = { cents: r.p - from.msrp, what: PRICE_KIND_LABEL[r.kind], at: r.to };
+  }
+  if (low && price < low.cents) return { tier: 'best', note: `under RSI's lowest on record (${usdPlain(low.cents)}, ${low.what}, ${new Date(low.at).getFullYear()})` };
+  if (mk && mk.cents < 0) return { tier: 'below', note: `${usdPlain(-mk.cents)} under RSI today` };
+  return null;
+}
+
+/** Paints for your hulls that RSI doesn't sell, that you don't own: the *Gaps* preset. */
+export const GAPS_FILTER: Partial<ImpFilter> = { myPaints: true, hideOwned: true, notOnRsi: true, onlyOwned: false };
 
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 /**
@@ -221,8 +373,19 @@ export function paintsIn(p: ImpProduct, ctx: PriceCtx, lines: string[]): { name:
 }
 
 /** What's inside a multi-item listing, and how much of it you have: ships of a pack (by id) plus the paints it names. */
+/** One piece of a pack: RSI's picture and price for it alone, when RSI sells it (paint) or lists it (hull, MSRP). */
+export interface ContentItem {
+  name: string;
+  have: boolean;
+  ship?: true;
+  thumb?: string | null;
+  /** RSI price alone (cents): store paint price, or the hull's cheapest on-sale SKU else MSRP; null = RSI doesn't price it. */
+  cents?: number | null;
+  /** RSI sells it alone today. */
+  sold?: boolean;
+}
 export interface Contents {
-  items: { name: string; have: boolean }[];
+  items: ContentItem[];
   have: number;
   of: number;
   /** Items the title counts but RSI+ couldn't name (retired paints): never counted as had. */
@@ -230,12 +393,13 @@ export interface Contents {
 }
 export function contentsOf(p: ImpProduct, v: ImpVariant, ctx: PriceCtx, own: OwnCtx): Contents | null {
   const info = parseSku(v.sku);
-  const items: { name: string; have: boolean }[] = [];
+  const items: ContentItem[] = [];
   const lines: string[] = [];
   if (info.kind === 'ship' || info.kind === 'pack') {
     for (const id of new Set(info.ships)) {
       const s = ctx.byId.get(id);
-      items.push({ name: s?.name ?? `ship ${id}`, have: own.hulls.has(id) });
+      const sale = s ? cheapest(s.standalone) : null;
+      items.push({ name: s?.name ?? `ship ${id}`, have: own.hulls.has(id), ship: true, thumb: s?.thumb ?? null, cents: sale ?? (s?.msrp || null), sold: !!s && (s.standalone.some((k) => k.available) || s.ccu.some((k) => k.available)) });
       if (s) lines.push(s.name, s.name.split(' ')[0]!);
     }
   } else if (info.kind === 'paint' || /^paint$/i.test(p.type)) {
@@ -244,10 +408,13 @@ export function contentsOf(p: ImpProduct, v: ImpVariant, ctx: PriceCtx, own: Own
   } else return null;
   // Ship listings name paints only when they come with one ("400i + Meridian and Penumbra Paints").
   if (info.kind !== 'paint' && !/\bpaints?\b/i.test(p.title)) lines.length = 0;
-  for (const c of paintsIn(p, ctx, lines)) items.push({ name: c.name, have: ownedTitleCount(own.titles, c.name) > 0 });
+  for (const c of paintsIn(p, ctx, lines)) {
+    const sp = ctx.paints.get(paintKey(c.name));
+    items.push({ name: c.name, have: ownedTitleCount(own.titles, c.name) > 0, thumb: sp?.thumb ?? null, cents: sp ? sp.discounted || sp.price : null, sold: !!sp?.available });
+  }
   // "6 Paint Pack": paints RSI no longer sells can't be named, but still count toward the total.
   const stated = Number(/\b(\d{1,2})[ -](?:paint|livery|skin)s?\b/i.exec(p.title)?.[1] ?? 0);
-  const paintsFound = items.length - items.filter((i) => ctx.byId.size && [...ctx.byId.values()].some((s) => s.name === i.name)).length;
+  const paintsFound = items.filter((i) => !i.ship).length;
   const unknown = stated > paintsFound ? stated - paintsFound : 0;
   if (items.length + unknown < 2 || !items.length) return null;
   const have = items.filter((i) => i.have).length;
@@ -275,6 +442,37 @@ export function ownershipFull(p: ImpProduct, v: ImpVariant, own: OwnCtx, ctx: Pr
         : '',
   };
 }
+
+/**
+ * Hulls a paint listing is for. By title first, like RSI's paints ("400i - Meridian Paint", "Paints - 890 Jump -
+ * Penumbra Paint", "100 Series - …" = the whole series); else the ship id some paint SKUs carry (`P.223.411.L`, 223 =
+ * 400i), widened to its family — that id names one variant (600i paints carry the 600i Touring's). Packs that name no
+ * ship ("Paints - Auspicious Red Dragon and Dog Paint Pack") → none.
+ */
+export function paintShips(p: ImpProduct, ctx: PriceCtx): CatalogShip[] {
+  if (!ctx.ships.length) return [];
+  const title = bareTitle(p.title).replace(/^paints?\s*[-–—:]\s*/i, '');
+  if (/\s[-–—:]\s/.test(title)) {
+    const hit = shipsFor(title, ctx.ships);
+    if (hit.length) return hit;
+  }
+  const id = Number(/^p\.(\d+)\.\d+/i.exec(p.variants[0]?.sku ?? '')?.[1] ?? NaN);
+  const s = ctx.byId.get(id);
+  if (!s) return [];
+  const fam = line(s.name, ctx.ships);
+  return ctx.ships.filter((x) => line(x.name, ctx.ships) === fam);
+}
+const ownedIdsMemo = new WeakMap<Map<number, OwnedShip>, Set<number>>();
+const ownedIdsOf = (hulls: Map<number, OwnedShip>) => {
+  let ids = ownedIdsMemo.get(hulls);
+  if (!ids) ownedIdsMemo.set(hulls, (ids = ownedShipIds([...hulls.values()].map((o) => o.ship))));
+  return ids;
+};
+/** A paint listing for a hull you own (pledged or in-game). */
+export const paintFitsOwned = (p: ImpProduct, ctx: PriceCtx, own: OwnCtx) => {
+  const ids = ownedIdsOf(own.hulls);
+  return ids.size > 0 && paintShips(p, ctx).some((s) => ids.has(s.id));
+};
 
 /** Strip the store's listing words so a paint title can meet RSI's: "100 Series - Melrose Paint - Imperator" stays, " - LTI" etc. go. */
 const bareTitle = (t: string) => t.replace(/\s*-\s*(standalone (ship|vehicle)|original concept lti|lti)\s*$/i, '').trim();
@@ -369,7 +567,7 @@ export interface Ownership {
   /** What you paid for the one you own (hangar melt value), when RSI+ can tell. */
   paid?: PaidFor;
   /** Multi-item listings: each thing inside and whether you have it. */
-  contents?: { name: string; have: boolean }[];
+  contents?: ContentItem[];
 }
 
 export function ownership(p: ImpProduct, v: ImpVariant, own: OwnCtx, byId: Map<number, CatalogShip>): Ownership {
@@ -433,6 +631,11 @@ export interface ImpRow {
   markup: { cents: number; pct: number } | null;
   own: Ownership;
   available: boolean;
+  /** Paint listing for a hull you own (`paintFitsOwned`); false for everything else. */
+  fitsMine: boolean;
+  status: RsiStatus;
+  deal: { tier: DealTier; note: string } | null;
+  buyback: BuybackHit | null;
 }
 
 /** The variant a row stands for: cheapest in stock, else cheapest. Upgrades: the cheapest you can apply (own the from ship) first. */
@@ -453,7 +656,22 @@ export function pickVariant(p: ImpProduct, own?: OwnCtx): ImpVariant | null {
 export function rowOf(p: ImpProduct, ctx: PriceCtx, own: OwnCtx, v = pickVariant(p, own)): ImpRow | null {
   if (!v) return null;
   const rsi = rsiPrice(p, v, ctx);
-  return { product: p, variant: v, kind: kindOf(p), info: parseSku(v.sku), rsi, markup: markup(v.price, rsi), own: ownershipFull(p, v, own, ctx), available: p.variants.some((x) => x.available) };
+  const info = parseSku(v.sku);
+  const mk = markup(v.price, rsi);
+  return {
+    product: p,
+    variant: v,
+    kind: kindOf(p),
+    info,
+    rsi,
+    markup: mk,
+    own: ownershipFull(p, v, own, ctx),
+    available: p.variants.some((x) => x.available),
+    fitsMine: kindOf(p) === 'paint' && paintFitsOwned(p, ctx, own),
+    status: rsiStatus(p, info, ctx),
+    deal: dealOf(info, v.price, mk, ctx),
+    buyback: buybackFor(p, info, ctx),
+  };
 }
 
 export interface ImpFilter {
@@ -465,16 +683,26 @@ export interface ImpFilter {
   onlyOwned: boolean;
   /** Upgrades you can apply: you own the ship it upgrades from. */
   canApply: boolean;
+  /** Paints for hulls you own. */
+  myPaints: boolean;
+  /** Not on RSI's store today (`RsiStatus.sold === false`). */
+  notOnRsi: boolean;
+  /** Under RSI's price today or its lowest on record (`dealOf`). */
+  deals: boolean;
+  /** Something your RSI buyback gives back too. */
+  inBuyback: boolean;
   inStock: boolean;
   lti: boolean;
   /** Only listings with an RSI price to compare. */
   priced: boolean;
+  /** Only listings RSI+ has no RSI price for (the opposite of `priced`). */
+  unpriced: boolean;
   /** Markup at most this fraction (0 = at or below RSI); null = any. */
   maxMarkup: number | null;
   minPrice: number | null;
   maxPrice: number | null;
 }
-export const NO_IMP_FILTER: ImpFilter = { q: '', kinds: [], hideOwned: false, onlyOwned: false, canApply: false, inStock: false, lti: false, priced: false, maxMarkup: null, minPrice: null, maxPrice: null };
+export const NO_IMP_FILTER: ImpFilter = { q: '', kinds: [], hideOwned: false, onlyOwned: false, canApply: false, myPaints: false, notOnRsi: false, deals: false, inBuyback: false, unpriced: false, inStock: false, lti: false, priced: false, maxMarkup: null, minPrice: null, maxPrice: null };
 
 /** Search words: every word must be in the title, vendor, type or tags; `-word` excludes. */
 export function matchesQuery(p: ImpProduct, q: string): boolean {
@@ -492,9 +720,14 @@ export function filterRows(rows: ImpRow[], f: ImpFilter): ImpRow[] {
       (!f.hideOwned || !r.own.owned) &&
       (!f.onlyOwned || r.own.owned || !!r.own.partial?.have || r.own.haveFrom) &&
       (!f.canApply || (r.kind === 'ccu' && r.own.haveFrom)) &&
+      (!f.myPaints || r.fitsMine) &&
+      (!f.notOnRsi || r.status.sold === false) &&
+      (!f.deals || !!r.deal) &&
+      (!f.inBuyback || !!r.buyback) &&
       (!f.inStock || r.available) &&
       (!f.lti || r.product.variants.some((v) => parseSku(v.sku).insurance === 'lti') || /\bLTI\b/.test(r.product.title)) &&
       (!f.priced || r.rsi.cents != null) &&
+      (!f.unpriced || r.rsi.cents == null) &&
       (f.maxMarkup == null || (r.markup != null && r.markup.pct <= f.maxMarkup)) &&
       (f.minPrice == null || r.variant.price >= f.minPrice) &&
       (f.maxPrice == null || r.variant.price <= f.maxPrice),
@@ -576,9 +809,12 @@ export function productFromPage(doc: Document, handle: string): ImpProduct | nul
   const title = name || doc.querySelector('.product-single__title')?.textContent?.trim() || mp.variants[0]?.name?.split(' - ')[0] || handle;
   const desc = doc.querySelector('.product-single__description, .product__description, [class*="product-description"]');
   const text = descText(desc?.innerHTML ?? ldDesc);
+  const og = doc.querySelector<HTMLMetaElement>('meta[property="og:image"]')?.content;
+  const image = imageOf({ featured_image: og });
   return {
     handle: mp.handle ?? handle,
     title,
+    ...(image ? { image } : {}),
     type: String(mp.type ?? ''),
     vendor: String(mp.vendor ?? ''),
     tags: [],
