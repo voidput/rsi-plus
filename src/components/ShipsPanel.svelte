@@ -28,7 +28,7 @@
   import { isExtra, isInsurance } from '@/lib/bundle';
   import { cleanLabels, labelsOf, type Labels } from '@/lib/labels';
   import { sortBy, type SortState } from '@/lib/sort';
-  import { paintKey, priceLabel, usd, type Catalog, type CatalogShip, type PaintCatalog, type StoreContent, type StorePaint } from '@/lib/store';
+  import { isLimitedTime, paintKey, priceLabel, usd, type Catalog, type CatalogShip, type PaintCatalog, type StoreContent, type StoreItem, type StorePaint } from '@/lib/store';
   import { cooldownLeft, cooldownMsg, cooldownReset } from '@/lib/cooldown';
   import { ownUsd } from '@/lib/privacy.svelte';
   import SortTh from './SortTh.svelte';
@@ -79,6 +79,9 @@
   /** The Browse listing's contents per listing id (what a paint pack grants) — the paint catalog itself keeps none. */
   let packContents = $state(new Map<number, StoreContent[]>());
   const contentsOf = (items: { id: number; contents?: StoreContent[] }[] | undefined) => new Map((items ?? []).filter((i) => (i.contents?.length ?? 0) > 1).map((i) => [i.id, i.contents!]));
+  /** Browse listing ids RSI marks "Limited Time" — covers a paint catalog saved before it kept the ribbon. */
+  let limitedListing = $state(new Set<number>());
+  const limitedOf = (items: StoreItem[] | undefined) => new Set((items ?? []).filter(isLimitedTime).map((i) => i.id));
   let buyback = $state<Awaited<ReturnType<typeof buybackItem.getValue>>>(null);
   let game = $state<GameShip[]>([]);
   let labels = $state<Labels>({});
@@ -89,7 +92,7 @@
     hangarItem.getValue().then((h) => (hangar = h));
     catalogItem.getValue().then((c) => (cat = c));
     paintCatalogItem.getValue().then((p) => (storePaints = p));
-    storeItemsItem.getValue().then((v) => (packContents = contentsOf(v?.items)));
+    storeItemsItem.getValue().then((v) => ((packContents = contentsOf(v?.items)), (limitedListing = limitedOf(v?.items))));
     buybackItem.getValue().then((b) => (buyback = b));
     gameShipsItem.getValue().then((g) => (game = g));
     pledgeLabelsItem.getValue().then((l) => (labels = cleanLabels(l)));
@@ -97,7 +100,7 @@
       .then((c) => (cat = c))
       .catch((e) => (error = `Store catalog: ${(e as Error).message} (needed to match paints to ships)`));
     refreshPaints(false);
-    const offs = [hangarItem.watch((h) => (hangar = h)), catalogItem.watch((c) => (cat = c)), paintCatalogItem.watch((p) => (storePaints = p)), storeItemsItem.watch((v) => (packContents = contentsOf(v?.items))), buybackItem.watch((b) => (buyback = b)), gameShipsItem.watch((g) => (game = g ?? [])), pledgeLabelsItem.watch((l) => (labels = cleanLabels(l)))];
+    const offs = [hangarItem.watch((h) => (hangar = h)), catalogItem.watch((c) => (cat = c)), paintCatalogItem.watch((p) => (storePaints = p)), storeItemsItem.watch((v) => ((packContents = contentsOf(v?.items)), (limitedListing = limitedOf(v?.items)))), buybackItem.watch((b) => (buyback = b)), gameShipsItem.watch((g) => (game = g ?? [])), pledgeLabelsItem.watch((l) => (labels = cleanLabels(l)))];
     return () => offs.forEach((o) => o());
   });
   async function refreshPaints(fresh: boolean) {
@@ -146,7 +149,7 @@
   const PREFS = 'rsiplus:ships';
   const saved = (() => {
     try {
-      return JSON.parse(localStorage.getItem(PREFS) ?? '{}') as Partial<{ own: Own; groupShow: GroupShow; withEmpty: boolean; shipFacets: FacetValues }>;
+      return JSON.parse(localStorage.getItem(PREFS) ?? '{}') as Partial<{ own: Own; groupShow: GroupShow; withEmpty: boolean; limitedOnly: boolean; shipFacets: FacetValues }>;
     } catch {
       return {};
     }
@@ -156,11 +159,13 @@
   let own = $state<Own>(saved.own ?? 'both');
   let groupShow = $state<GroupShow>(saved.groupShow ?? '');
   let withEmpty = $state(saved.withEmpty ?? true);
+  /** Paints by ship: only store paints RSI marks "Limited Time". */
+  let limitedOnly = $state(saved.limitedOnly ?? false);
   /** My ships facet choices (FacetBar). */
   let shipValues = $state<FacetValues>(saved.shipFacets ?? {});
   $effect(() => {
     try {
-      localStorage.setItem(PREFS, JSON.stringify({ own, groupShow, withEmpty, shipFacets: shipValues }));
+      localStorage.setItem(PREFS, JSON.stringify({ own, groupShow, withEmpty, limitedOnly, shipFacets: shipValues }));
     } catch {
       /* no persistence — fine */
     }
@@ -263,6 +268,8 @@
     }
     return out;
   });
+  const isLimited = (sp: StorePaint | null) => !!sp && (!!sp.limited || limitedListing.has(sp.id));
+  const limitedCount = $derived(groupsAll.reduce((n, g) => n + g.rows.filter((r) => isLimited(r.store)).length, 0));
   const counts = $derived.by(() => {
     const c = { owned: 0, 'not-owned': 0 };
     for (const g of groupsAll) for (const r of g.rows) r.owned ? (c.owned += r.owned.count) : c['not-owned']++;
@@ -280,10 +287,10 @@
       .filter((g) => !groupShow || (g.key === 'packs' ? groupShow === 'unknown' : pgStatus(g) === groupShow))
       .map((g) => {
         const groupHit = !!query && `${g.label} ${g.owned.map((o) => o.ship.name).join(' ')}`.toLowerCase().includes(query);
-        const rs = g.rows.filter((r) => (own === 'both' || (own === 'owned') === !!r.owned) && (!query || groupHit || r.title.toLowerCase().includes(query)));
+        const rs = g.rows.filter((r) => (own === 'both' || (own === 'owned') === !!r.owned) && (!limitedOnly || isLimited(r.store)) && (!query || groupHit || r.title.toLowerCase().includes(query)));
         return { ...g, rows: rs };
       })
-      .filter((g) => g.rows.length || (withEmpty && g.owned.length && (!query || g.label.toLowerCase().includes(query))))
+      .filter((g) => g.rows.length || (withEmpty && !limitedOnly && g.owned.length && (!query || g.label.toLowerCase().includes(query))))
       .sort((a, b) => Number(a.key === '~' || a.key === 'packs') - Number(b.key === '~' || b.key === 'packs') || Number(!a.owned.length) - Number(!b.owned.length) || a.label.localeCompare(b.label));
   });
   const groupKeys = $derived(groups.map((g) => `p|${g.key}`));
@@ -412,16 +419,19 @@
                   {/if}
                 </div>
                 <span class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">Paints</span>
-                <Segmented
-                  options={[
-                    { id: 'both', label: `All · ${counts.owned + counts['not-owned']}` },
-                    { id: 'owned', label: `I own · ${counts.owned}`, hint: 'Paints in your hangar' },
-                    { id: 'not-owned', label: `I don't own · ${counts['not-owned']}`, hint: 'Paints the store sells that you do not have' },
-                  ]}
-                  bind:value={own}
-                  ariaLabel="Paints"
-                  size="sm"
-                />
+                <div class="flex flex-wrap items-center gap-3">
+                  <Segmented
+                    options={[
+                      { id: 'both', label: `All · ${counts.owned + counts['not-owned']}` },
+                      { id: 'owned', label: `I own · ${counts.owned}`, hint: 'Paints in your hangar' },
+                      { id: 'not-owned', label: `I don't own · ${counts['not-owned']}`, hint: 'Paints the store sells that you do not have' },
+                    ]}
+                    bind:value={own}
+                    ariaLabel="Paints"
+                    size="sm"
+                  />
+                  <SwitchRow id="paints-limited" size="sm" class="text-xs" label={`Limited time only · ${limitedCount}`} checked={limitedOnly} onchange={(v) => (limitedOnly = v)} />
+                </div>
               </div>
               <div class="flex flex-wrap items-center gap-2">
                 <Input class="w-64" placeholder="Search paint or ship" bind:value={paintQ} aria-label="Search paints" />
@@ -470,6 +480,7 @@
                                     {:else if r.store && !r.store.available}
                                       <Tag kind="oos" class="m-px" />
                                     {/if}
+                                    {#if isLimited(r.store)}<Tag kind="limited" size="xs" class="m-px" />{/if}
                                   </Table.Cell>
                                   <Table.Cell class="w-[260px] text-[11px] whitespace-normal max-md:hidden">{r.owned ? fitsLabel(r.owned) || '—' : ''}</Table.Cell>
                                   <Table.Cell class="w-[220px] text-[11px] whitespace-normal">{@render links(r)}</Table.Cell>
@@ -599,7 +610,7 @@
                         <div class="flex items-center gap-2.5">
                           <Thumb src={f.ship.thumb} name={f.ship.name} width={64} height={36} />
                           <div>
-                            <div class="flex items-center gap-0.5"><strong>{f.ship.name}</strong><WikiLink href={wikiPageUrl(f.ship.name)} name={f.ship.name} />{#if f.ship.near}<MatchWarn name={f.ship.name} near={f.ship.near.name} />{/if}</div>
+                            <div class="flex items-center gap-0.5"><strong>{f.ship.name}</strong><WikiLink href={wikiPageUrl(f.ship.name)} name={f.ship.name} />{#if f.ship.near || f.ship.fromGame}<MatchWarn name={f.ship.name} near={f.ship.near?.name ?? null} inGame={!!f.ship.inGame} fromGame={!!f.ship.fromGame} />{/if}</div>
                             {#if (f.ship.flyable && stageOf(f.ship.flyable) !== 'ready') || f.ship.size}
                               <div class="mt-0.5 flex flex-wrap gap-0.5">
                                 {#if f.ship.flyable && stageOf(f.ship.flyable) !== 'ready'}<Tag kind="stage" value={f.ship.flyable} size="xs" />{/if}

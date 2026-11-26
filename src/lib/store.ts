@@ -36,6 +36,7 @@ export async function rsiFetch(url: string, init: RequestInit, tries = 0): Promi
   return rsiFetch(url, init, tries + 1);
 }
 import { EXTRA_SHIPS } from './data/extra-ships';
+import GAME_SHIPS from './data/game-ships.json';
 import { fmtUsd } from './currency';
 
 export interface Sku {
@@ -72,6 +73,16 @@ export interface CatalogShip {
    * the catalog hull of the same line. Never in the catalog array; its id is negative and stable per name.
    */
   near?: { id: number; name: string };
+  /**
+   * Stand-in for a variant earned only in the game (Wikelo trades, PYAM executive hangars: "F8C Lightning Wikelo War
+   * Special"): the hull's paints and data, but no pledge value — `msrp` 0.
+   */
+  inGame?: true;
+  /**
+   * Stand-in from the game's own vehicle list (`data/game-ships.json`, sc-gamedata dumps) for a hangar hull RSI's
+   * catalog matches nothing to (Mustang Omega, PTV, Vanduul Scythe): maker and role from the game files, no MSRP.
+   */
+  fromGame?: true;
   /**
    * Last CCU price seen below MSRP (`lib/price-history.ts` `withExpected`): what a "wait for a sale" step is priced
    * at. Never saved with the catalog — set on the copy the planner works with.
@@ -240,7 +251,55 @@ export interface ShipMatch {
 }
 const matchedInfo = new WeakMap<object, Map<string, ShipMatch | null>>();
 export function matchInfo(name: string, ships: CatalogShip[]): ShipMatch | null {
-  return memoFor(matchedInfo, ships, name, () => findShip(name, ships));
+  return memoFor(matchedInfo, ships, name, () => inGameCheck(name, findShip(name, ships) ?? gameShip(name, ships)));
+}
+interface GameShip {
+  name: string;
+  /** The game's own spelling when `name` is RSI's (the game's "600i" is RSI's 600i Explorer). */
+  game?: string;
+  rec: string;
+  maker: string;
+  role: string;
+  earned?: 'wikelo' | 'exec';
+}
+let gameIx: Map<string, GameShip> | null = null;
+/**
+ * The game's vehicle list by `shipKey`, for names RSI's catalog matches nothing to: an exact name, else the longest
+ * game name inside the text ("Mustang Omega LTI" → Mustang Omega). Never in the catalog array, so the CCU planner,
+ * store pages and exports keep RSI's hulls only.
+ */
+function gameShip(name: string, ships: CatalogShip[]): ShipMatch | null {
+  gameIx ??= new Map((GAME_SHIPS as { ships: GameShip[] }).ships.flatMap((g) => [[shipKey(g.name), g] as const, ...(g.game ? [[shipKey(g.game), g] as const] : [])]));
+  const k = shipKey(name);
+  if (!k) return null;
+  let g = gameIx.get(k);
+  if (!g) {
+    const padded = ` ${k} `;
+    for (const [gk, x] of gameIx) if (gk && padded.includes(` ${gk} `) && (!g || gk.length > shipKey(g.name).length)) g = x;
+  }
+  if (!g) return null;
+  // The game's spelling of a hull RSI lists under another name: that catalog hull.
+  if (g.game) {
+    const rsi = findShip(g.name, ships);
+    if (rsi) return rsi;
+  }
+  const ship: CatalogShip = { id: standInId(`game:${g.rec}`), name: g.name, manufacturer: g.maker, focus: g.role, msrp: 0, flyable: '', link: '', thumb: null, standalone: [], ccu: [], fromGame: true, ...(g.earned ? { inGame: true as const } : {}) };
+  return { ship, how: 'near' };
+}
+/** Variants only earned in the game (never pledged): Wikelo trade specials, PYAM executive-hangar ships. */
+const IN_GAME = /\b(wikelo|pyam)\b/i;
+/**
+ * A match on the base hull ("F8C Lightning Wikelo War Special" → F8C Lightning) is the hull, but not what was pledged
+ * for it: a stand-in under its own name with no MSRP, so fleet value and melt maths don't count $300 nobody paid.
+ */
+function inGameCheck(name: string, m: ShipMatch | null): ShipMatch | null {
+  if (!m || !IN_GAME.test(name) || IN_GAME.test(m.ship.name)) return m;
+  const base = m.ship.near ? { id: m.ship.near.id, name: m.ship.near.name } : { id: m.ship.id, name: m.ship.name };
+  const k = shipKey(name);
+  const ship: CatalogShip = { ...m.ship, id: standInId(k), name: name.trim().replace(/\s+/g, ' '), msrp: 0, link: '', standalone: [], ccu: [], near: base, inGame: true };
+  delete ship.expect;
+  delete ship.msrpSource;
+  return { ship, how: 'near' };
 }
 /** Model codes in a key: "f7a", "c8r", "hm6", "a2" (letters then digits); "l 21" splits into bits and counts as none. */
 const codesOf = (toks: string[]) => toks.filter((t) => /^[a-z]+\d+[a-z]*$/.test(t));
@@ -395,6 +454,18 @@ export function lastSale(history: SaleHistory, id: number): number | null {
   return Math.max(h.ccu ?? 0, h.standalone ?? 0) || null;
 }
 
+/**
+ * Store paints RSI+ has seen on sale: `paintKey(name)` → the price then (cents) and when (ms), stamped on every paint
+ * refresh. RSI keeps no history, so this only knows what was on sale since install — what *last at RSI* reads for a
+ * paint the store no longer sells.
+ */
+export type PaintSeen = Record<string, { p: number; at: number }>;
+export function recordPaintSeen(seen: PaintSeen, paints: StorePaint[], now: number): PaintSeen {
+  const out: PaintSeen = { ...seen };
+  for (const sp of paints) if (sp.available) out[paintKey(sp.name)] = { p: sp.discounted || sp.price, at: now };
+  return out;
+}
+
 /** A paint (or paint pack) on the pledge store — public browse listing, no login needed. */
 export interface StorePaint {
   id: number;
@@ -406,6 +477,8 @@ export interface StorePaint {
   discounted: number;
   available: boolean;
   thumb: string | null;
+  /** RSI's "Limited Time" ribbon on the listing (leaves the store when the window closes). Absent = not limited, or saved before it was read. */
+  limited?: true;
 }
 export interface PaintCatalog {
   at: number;
@@ -502,6 +575,7 @@ export const mapListing = (r: RawListing): StorePaint => ({
   discounted: r.price.discounted ?? r.price.amount,
   available: !!r.stock?.available,
   thumb: r.media?.thumbnail?.storeSmall ?? null,
+  ...((r.tags ?? []).some((g) => /limited/i.test(g.name)) ? { limited: true as const } : {}),
 });
 
 /**

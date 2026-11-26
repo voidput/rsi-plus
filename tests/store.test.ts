@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isLimitedSku, isLowStock, isWarbondSku, matchShip, paintKey, priceLabel, shipKey, usd, type CatalogShip } from '@/lib/store';
+import { isLimitedSku, isLowStock, isWarbondSku, mapListing, matchShip, paintKey, priceLabel, shipKey, usd, type CatalogShip } from '@/lib/store';
 
 const ship = (id: number, name: string): CatalogShip => ({ id, name, manufacturer: '', focus: '', msrp: 1000, flyable: '', link: '', thumb: null, standalone: [], ccu: [] });
 
@@ -25,6 +25,12 @@ describe('store helpers', () => {
     expect(priceLabel(5000, 5000)).toBe('$50');
   });
 
+  it('mapListing keeps the Limited Time ribbon as `limited`, absent otherwise', () => {
+    const raw = { id: '7', name: 'Cutlass - Dusk Paint', url: '/x', price: { amount: 500, discounted: null }, stock: { available: true } };
+    expect(mapListing({ ...raw, tags: [{ name: 'Limited Time' }] }).limited).toBe(true);
+    expect('limited' in mapListing({ ...raw, tags: [{ name: 'New' }] })).toBe(false);
+    expect('limited' in mapListing(raw)).toBe(false);
+  });
   it('isLowStock', () => {
     expect(isLowStock({ available: true, stockLevel: 'low' })).toBe(true);
     expect(isLowStock({ available: true, stockLevel: 'high' })).toBe(false);

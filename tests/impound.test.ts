@@ -9,8 +9,14 @@ import {
   kindOf,
   markup,
   matchesQuery,
+  buybackIndex,
+  imageOf,
+  sizedImage,
+  dealOf,
   ownership,
   pageOf,
+  paintShips,
+  rsiStatus,
   parseSku,
   pickVariant,
   priceCtx,
@@ -163,6 +169,13 @@ describe('contents and paid', () => {
     expect(r.own.label).toContain('you have 2/5 in your hangar');
     expect(r.own.contents!.map((c) => c.name)).not.toContain('100 Series - Invictus Blue and Gold Paint');
   });
+  it('pack pieces carry RSI pictures and prices', () => {
+    const withThumb = priceCtx(SHIPS, paints.map((x) => ({ ...x, thumb: `https://media.example/${x.id}/subscribers_vault_thumbnail.jpg` })));
+    const r = rowOf(pack, withThumb, NOBODY)!;
+    expect(r.own.contents![0]).toMatchObject({ cents: 500, sold: true, thumb: 'https://media.example/0/subscribers_vault_thumbnail.jpg' });
+    const sp = rowOf(toProduct({ handle: 'x', title: 'Cutlass Red + Skull and Crossbones Paint - LTI', product_type: '', vendor: '', tags: [], variants: [{ id: 1, title: 'Default Title', sku: 'UNIQUE.57.L.P', price: '200', available: true }] })!, withThumb, NOBODY)!;
+    expect(sp.own.contents!.find((c) => c.ship)).toMatchObject({ name: 'Cutlass Red', cents: 13500, sold: false });
+  });
   it('ship pack with paints counts both', () => {
     const p = toProduct({ handle: 'x', title: 'Cutlass Red + Skull and Crossbones Paint - LTI', product_type: '', vendor: '', tags: [], variants: [{ id: 1, title: 'Default Title', sku: 'UNIQUE.57.L.P', price: '200', available: true }] })!;
     const real: OwnCtx = { ...NOBODY, hulls: new Map([hull(57)]), titles: ownedTitleCountsFor([]) };
@@ -191,3 +204,81 @@ describe('stated counts', () => {
     expect(r.own.label).toContain('4 not identified');
   });
 });
+
+describe('paints for my ships', () => {
+  const fleet = [ship(223, '400i', 25000), ship(140, '600i Touring', 43500), ship(141, '600i Explorer', 47500), ship(900, '890 Jump', 95000), ship(159, '100i', 5000), ship(160, '125a', 6000)];
+  const pc = priceCtx(fleet, []);
+  const paint = (title: string, sku: string): ImpProduct => ({ handle: title.toLowerCase().replace(/\W+/g, '-'), title, vendor: '', type: 'Paint', tags: [], variants: [{ id: 1, title: 'Default Title', sku, price: 1000, available: true, compareAt: null }] }) as unknown as ImpProduct;
+  const names = (p: ImpProduct) => paintShips(p, pc).map((s) => s.name).sort();
+  it('reads the hull from the title, the "Paints - " prefix and series names too', () => {
+    expect(names(paint('400i - Meridian Paint', 'P.223.411.L'))).toEqual(['400i']);
+    expect(names(paint('Paints - 890 Jump - Penumbra Paint', 'P.1141'))).toEqual(['890 Jump']);
+    expect(names(paint('100 Series - Slate Camo Paint', 'P.159.383.A'))).toEqual(['100i', '125a']);
+  });
+  it('falls back to the SKU ship id, widened to the family; packs naming no ship match nothing', () => {
+    expect(names(paint('Fortuna Paint', 'P.140.392.L'))).toEqual(['600i Explorer', '600i Touring']);
+    expect(names(paint('Paints - Auspicious Red Dragon and Dog Paint Pack', 'P.1332'))).toEqual([]);
+  });
+  it('the filter keeps paints for hulls you own only', () => {
+    const own: OwnCtx = { ...NOBODY, hulls: new Map([[141, { ship: fleet[2]!, count: 1, game: 0, gameHow: [], lti: false, insurance: [], items: [], paints: [] }]]) };
+    const rows = [paint('600i - Sterling Paint', 'p.1038'), paint('400i - Meridian Paint', 'P.223.411.L')].map((p) => rowOf(p, pc, own)!);
+    expect(filterRows(rows, { ...NO_IMP_FILTER, myPaints: true }).map((r) => r.product.title)).toEqual(['600i - Sterling Paint']);
+    expect(rowOf(paint('400i - Meridian Paint', 'P.223.411.L'), pc, NOBODY)!.fitsMine).toBe(false);
+  });
+});
+
+describe('not on RSI, last at RSI, deals, buyback', () => {
+  const YEAR = Date.UTC(2025, 5, 1);
+  const sold = { id: 1, title: 'Standard', price: 9000, available: true, stock: null };
+  const fleet = [ship(10, '350r', 12500), ship(57, 'Cutlass Red', 13500, { ccu: [sold] }), ship(178, 'Corsair', 25000)];
+  const history = { 178: { 'ship-wb': [{ p: 21000, from: YEAR - 86_400_000, to: YEAR }], msrp: [{ p: 25000, from: YEAR, to: YEAR }] }, 57: { 'ccu-wb': [{ p: 13000, from: YEAR, to: YEAR }] } };
+  const paints = [{ id: 5, name: 'Corsair - Ghoulish Green Paint', url: '', price: 1000, discounted: 1000, available: false, thumb: null }];
+  const pc = priceCtx(fleet, paints, {
+    history,
+    paintSeen: { [paintKeyOf('Corsair - Ghoulish Green Paint')]: { p: 1000, at: YEAR } },
+    buyback: [
+      { id: 7, name: 'Upgrade - 350r to Cutlass Red', date: '', contained: '', type: 'upgrade', upgrade: { fromId: 10, fromName: '350r', toId: 57, toName: 'Cutlass Red' }, url: '/x', price: 800 },
+      { id: 8, name: 'Standalone Ships - Corsair', date: '', contained: '', type: 'ship', upgrade: null, url: null, items: [{ title: 'Corsair', kind: 'Ship' }] },
+    ] as never,
+  });
+  const prod = (title: string, sku: string, type = ''): ImpProduct => ({ handle: 'h', title, vendor: '', type, tags: [], variants: [{ id: 1, title: 'Default Title', sku, price: 1, available: true, compareAt: null }] }) as unknown as ImpProduct;
+  it('ship not sold today: last seen with its price; sold ship: true', () => {
+    const st = rsiStatus(prod('Corsair', '0-178.L.S'), parseSku('0-178.L.S'), pc);
+    expect(st).toMatchObject({ sold: false, last: { at: YEAR, cents: 21000, what: 'Warbond standalone' } });
+    expect(rsiStatus(prod('Cutlass Red', '0-57.L.S'), parseSku('0-57.L.S'), pc).sold).toBe(true);
+  });
+  it('paint: sold out at RSI → last seen from the paint memory; gear → unknown', () => {
+    const st = rsiStatus(prod('Corsair - Ghoulish Green Paint', 'P.1'), parseSku('P.1'), pc);
+    expect(st).toMatchObject({ sold: false, last: { cents: 1000, what: 'Store paint' } });
+    expect(rsiStatus(prod('Helmet', 'F.1'), parseSku('F.1'), pc).sold).toBeNull();
+    expect(rsiStatus(prod('Corsair', '0-178.L.S'), parseSku('0-178.L.S'), priceCtx([], [])).sold).toBeNull();
+  });
+  it('deal tiers: under the lowest on record beats under today', () => {
+    expect(dealOf(parseSku('0-178.L.S'), 20000, { cents: -5000, pct: -0.2 }, pc)).toMatchObject({ tier: 'best' });
+    expect(dealOf(parseSku('0-178.L.S'), 22000, { cents: -3000, pct: -0.12 }, pc)).toMatchObject({ tier: 'below' });
+    expect(dealOf(parseSku('0-178.L.S'), 26000, { cents: 1000, pct: 0.04 }, pc)).toBeNull();
+    // upgrade 350r → Cutlass Red: lowest on record $130 warbond − $125 = $5
+    expect(dealOf(parseSku('10-57.0M.CCU'), 400, null, pc)).toMatchObject({ tier: 'best' });
+  });
+  it('buyback: upgrades by from/to, single-hull ships by name', () => {
+    const ix = buybackIndex(pc.buyback.size ? [] : [], fleet);
+    expect(ix.size).toBe(0);
+    expect(pc.buyback.get('ccu:10-57')).toMatchObject({ id: 7, cents: 800 });
+    expect(pc.buyback.get('ship:178')).toMatchObject({ id: 8, cents: null });
+  });
+});
+
+describe('pictures', () => {
+  it('first image from either Shopify shape, protocol-relative made https', () => {
+    expect(imageOf({ images: [{ src: 'https://cdn.shopify.com/s/files/1/a.png?v=1' }] })).toBe('https://cdn.shopify.com/s/files/1/a.png?v=1');
+    expect(imageOf({ featured_image: '//theimpound.com/cdn/shop/files/b.jpg?v=2', images: ['//x/c.jpg'] })).toBe('https://theimpound.com/cdn/shop/files/b.jpg?v=2');
+    expect(imageOf({ images: ['//x.com/c.jpg'] })).toBe('https://x.com/c.jpg');
+    expect(imageOf({ images: [] })).toBeUndefined();
+    expect(imageOf({ featured_image: 'javascript:alert(1)' })).toBeUndefined();
+    expect(toProduct({ handle: 'h', title: 't', variants: [], images: [{ src: 'https://cdn.shopify.com/a.png' }] })!.image).toBe('https://cdn.shopify.com/a.png');
+  });
+  it('sizedImage sets the width, keeps the version', () => {
+    expect(sizedImage('https://cdn.shopify.com/a.png?v=1', 160)).toBe('https://cdn.shopify.com/a.png?v=1&width=160');
+  });
+});
+

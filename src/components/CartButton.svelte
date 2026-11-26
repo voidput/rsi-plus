@@ -11,6 +11,7 @@
   import HintBadge from './HintBadge.svelte';
   import { cartErrorLabel, type CartState } from '@/lib/cart-ui.svelte';
   import { cn } from '@/lib/utils';
+  import { usd } from '@/lib/store';
 
   let {
     state: entry, // `state` as a local name would shadow the `$state` rune
@@ -58,7 +59,7 @@
 </script>
 
 {#if entry?.st === 'added'}
-  <span class={cn('text-success inline-flex items-center gap-0.5 text-[11px]', className)}><Check class="size-3" /> in cart{inCart > 1 ? ` ×${inCart}` : ''}{entry.price != null ? ` · ${entry.price}` : ''}</span>
+  <span class={cn('text-success inline-flex items-center gap-0.5 text-[11px]', className)}><Check class="size-3" /> in cart{inCart > 1 ? ` ×${inCart}` : ''}{entry.price != null ? ` · ${usd(entry.price)}` : ''}</span>
 {:else if entry?.st === 'adding'}
   <span class={cn('text-muted-foreground text-[11px]', className)}>adding…</span>
 {:else}

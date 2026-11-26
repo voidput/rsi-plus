@@ -19,6 +19,7 @@ import {
   catalogItem,
   ccuChainsItem,
   paintCatalogItem,
+  paintSeenItem,
   saleHistoryItem,
   wavesItem,
   priceHistoryItem,
@@ -36,7 +37,7 @@ import { readHangarOffscreen } from '@/lib/offscreen';
 import { ding } from '@/lib/sound';
 import { IAE_2956, WAVE_LEADS, wavesShown, waveTimes } from '@/lib/waves';
 import { chainEvents } from '@/lib/ccu';
-import { fetchCatalog, fetchPaints, fetchStoreItems, recordSales, wishlistEvents, type Catalog, type PaintCatalog } from '@/lib/store';
+import { fetchCatalog, fetchPaints, fetchStoreItems, recordPaintSeen, recordSales, wishlistEvents, type Catalog, type PaintCatalog } from '@/lib/store';
 import { sleep } from '@/lib/utils';
 import { catalogEntries, listingEntries } from '@/lib/storelog';
 import { clampSetting, STORE_LISTING_MINUTES } from '@/lib/settings-ui';
@@ -528,7 +529,11 @@ async function paints(fresh: boolean): Promise<PaintCatalog> {
   const cached = await paintCatalogItem.getValue();
   if (!fresh && cached && Date.now() - cached.at < 6 * 60 * 60_000) return cached;
   paintsPromise ??= fetchPaints()
-    .then(async (c) => (await paintCatalogItem.setValue(c), c))
+    .then(async (c) => {
+      await paintCatalogItem.setValue(c);
+      await paintSeenItem.setValue(recordPaintSeen(await paintSeenItem.getValue(), c.paints, c.at)).catch((e) => console.warn('[RSI+] paint history', e));
+      return c;
+    })
     .finally(() => (paintsPromise = null));
   return paintsPromise;
 }

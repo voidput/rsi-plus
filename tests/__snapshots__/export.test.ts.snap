@@ -54,6 +54,7 @@ exports[`fleet export (catalog-drift fixture) > is stable across runs and input 
   "ANVL_F7C_R_Hornet_Tracker_Mk_II	ANVL	F7C-R Hornet Tracker Mk II",
   "ANVL_F7C_S_Hornet_Ghost_Mk_I	ANVL	F7C-S Hornet Ghost Mk I",
   "ANVL_F7C_S_Hornet_Ghost_Mk_II	ANVL	F7C-S Hornet Ghost Mk II",
+  "ANVL_Lightning_F8C	ANVL	F8C Lightning",
   "ANVL_Gladiator	ANVL	Gladiator",
   "ANVL_Hawk	ANVL	Hawk",
   "ANVL_Hurricane	ANVL	Hurricane",

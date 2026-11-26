@@ -93,3 +93,22 @@ jobs:
           | while read -r old; do
               gh release delete "$old" --cleanup-tag -y
             done
+
+  # Discord post for the new prerelease (DISCORD_RELEASE_WEBHOOK_DEV; skipped when unset). Never fails the run.
+  notify:
+    needs: [version, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Notify Discord
+        continue-on-error: true
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_RELEASE_WEBHOOK_DEV }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.version.outputs.tag }}
+          SHA: ${{ github.sha }}
+          CHANNEL: dev
+        run: bash scripts/discord-notify.sh

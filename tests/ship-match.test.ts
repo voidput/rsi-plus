@@ -71,9 +71,30 @@ describe('ship-match audit (wiki vehicle names × RSI catalog)', () => {
     });
     expect(bad.map(({ n, m }) => `${n} → ${m!.ship.name}`)).toEqual([]);
   });
-  it('stand-ins have distinct ids', () => {
-    const ids = results.filter(({ m }) => m?.how === 'near').map(({ m }) => m!.ship.id);
-    expect(new Set(ids).size).toBe(ids.length);
+  it('F8C Lightning and its Executive Edition match the F8C extra (no catalog entry of its own)', () => {
+    expect(matchInfo('F8C Lightning', catalog)).toMatchObject({ how: 'exact', ship: { id: -9007 } });
+    expect(matchInfo('F8C Lightning Executive Edition', catalog)?.ship.id).toBe(-9007);
+    expect(matchInfo('F8C Lightning Executive Edition', catalog)?.how).not.toBe('near');
+  });
+  it('Wikelo / PYAM variants are earned in game: stand-ins of the F8C with no MSRP', () => {
+    for (const n of ['F8C Lightning Wikelo War Special', 'F8C Lightning Wikelo Sneak Special', 'F8C Lightning PYAM Exec']) {
+      const m = matchInfo(n, catalog)!;
+      expect(m).toMatchObject({ how: 'near', ship: { name: n, msrp: 0, inGame: true, near: { id: -9007 } } });
+    }
+    expect(matchInfo('F8C Lightning Wikelo War Special', catalog)!.ship.id).not.toBe(matchInfo('F8C Lightning PYAM Exec', catalog)!.ship.id);
+  });
+  it('stand-ins: one id per hull name (two names may land on one game hull: "600i" and "600i 2951 BIS")', () => {
+    const byId = new Map<number, Set<string>>();
+    for (const { m } of results) if (m?.how === 'near') byId.set(m.ship.id, (byId.get(m.ship.id) ?? new Set()).add(m.ship.name));
+    expect([...byId.values()].filter((n) => n.size > 1).map((n) => [...n].join(' / '))).toEqual([]);
+  });
+  it('the game list fills hulls RSI does not catalog, with no MSRP and earned flags', () => {
+    expect(matchInfo('Mustang Omega', catalog)).toMatchObject({ how: 'near', ship: { name: 'Mustang Omega', manufacturer: 'Consolidated Outland', msrp: 0, fromGame: true } });
+    // NPC-only Vanduul records (Mauler destroyer, Scythe) are not in the game list: nobody owns one.
+    expect(matchInfo('Mauler Destroyer', catalog)).toBeNull();
+    expect(matchInfo('Vanduul Scythe', catalog)).toBeNull();
+    // Never shadows an RSI hull: a catalog match wins.
+    expect(matchInfo('Cutlass Black', catalog)?.ship.fromGame).toBeUndefined();
   });
   it('every non-exact match, for review', () => {
     expect(results.filter(({ m }) => m?.how !== 'exact').map(({ n, m }) => `${m?.how ?? 'none'}\t${n}${m ? `\t→ ${m.ship.near ? `stand-in (from ${m.ship.near.name})` : m.ship.name}` : ''}`)).toMatchSnapshot();

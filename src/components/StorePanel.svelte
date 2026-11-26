@@ -34,6 +34,11 @@
   import { LINK_QUIET } from '@/lib/ui';
   import Star from '@lucide/svelte/icons/star';
   import FanNotice from './FanNotice.svelte';
+  import CartButton from './CartButton.svelte';
+  import CcuCartMenu from './CcuCartMenu.svelte';
+  import OpenCartButton from './OpenCartButton.svelte';
+  import { addStandalone } from '@/lib/cart';
+  import { createCartLedger } from '@/lib/cart-ui.svelte';
 
   let cat = $state<Catalog | null>(null);
   let wish = $state<WishShip[]>([]);
@@ -53,6 +58,18 @@
   const setListing = (v: { items?: StoreItem[] } | null) => ((shipListings = shipsOf(v)), (storeAll = v?.items ?? []));
   /** Catalog id → packs / game packages on sale that grant it, best share first (some hulls are sold only that way). */
   const packs = $derived(packOffersByShip(storeAll, priceIndex(storeAll, cat?.ships ?? [])));
+  // ---- add a standalone ship or a pack to the RSI cart (same call as Browse; never retried, nothing paid). CCUs need a
+  // from-ship RSI can't guess, so those go through *Plan CCU*. ----
+  const cart = createCartLedger();
+  const addOne = (sku: number) => cart.add(sku, () => addStandalone(sku, 1));
+  /** Hulls you own (pledged or in-game) cheaper than `to`, most expensive first: what a CCU to it can start from. */
+  const fromFor = (to: CatalogShip) =>
+    [...owned.values()]
+      .map((o) => o.ship)
+      .filter((f) => !f.near && f.msrp > 0 && to.msrp > f.msrp && f.id !== to.id)
+      .sort((a, b) => b.msrp - a.msrp);
+  /** "Standard Edition" / "Warbond Edition": the SKU's own words, without the "Edition". */
+  const skuWords = (t: string) => t.replace(/\s*edition\s*$/i, '').trim();
   const packTip = (s: CatalogShip, list: PackOffer[]) =>
     list
       .slice(0, 10)
@@ -168,6 +185,7 @@
         { id: 'warbond', label: 'Warbond CCU', hint: 'A warbond CCU to it on sale (new money only)', test: (s) => !!warbondOf(s) },
         { id: 'standard', label: 'Standard CCU', hint: 'A non-warbond CCU to it on sale (store credit welcome)', test: (s) => s.ccu.some((k) => !isWarbondSku(k)) },
         { id: 'limited', label: 'Limited CCU', hint: 'A CCU RSI titles limited', test: (s) => s.ccu.some(isLimitedSku) },
+        { id: 'limitedtime', label: 'Limited time', hint: 'RSI marks the standalone listing time-limited (from Browse)', test: (s) => limitedIds.has(s.id) },
         { id: 'standalone', label: 'Standalone', hint: 'The ship itself on sale', test: (s) => s.standalone.some((k) => k.available) },
         { id: 'pack', label: 'In a pack', hint: 'A pack or game package on sale grants it (from Browse) — some hulls are sold only that way', test: (s) => packs.has(s.id) },
         { id: 'packonly', label: 'Pack only', hint: 'Only a pack or game package grants it right now: no CCU, no standalone', test: (s) => packs.has(s.id) && !onSale(s) },
@@ -228,6 +246,7 @@
       · ★ wishlist alerts when a warbond / sale price appears (checked every 30 min) · <em>Not on sale</em> lists the rest; <em>Plan CCU</em> works for those too (Plan ahead)
     </Card.Description>
     <Card.Action class="flex flex-wrap items-center gap-2">
+      <OpenCartButton count={cart.added} total={cart.snapshot?.qty ?? null} />
       <TipButton variant="outline" href="#paint-rebuy" tip="Melt paints you own and buy them back together with RSI's multi-paint discount — best value per cart size">Paint rebuy value →</TipButton>
       <Button variant="outline" disabled={loading} onclick={() => refresh(true)}>{loading ? 'Loading…' : 'Refresh prices'}</Button>
     </Card.Action>
@@ -293,16 +312,22 @@
             <Table.Cell class="text-right tabular-nums">{s.msrp ? usd(s.msrp) : '—'}</Table.Cell>
             <Table.Cell class="whitespace-normal">
               <div class="flex flex-wrap gap-1">
-                {#if wb}<Tag kind="warbond" label={`Warbond ${usd(wb.price)}${wb.stock != null ? ` · ${wb.stock} left` : ''}`} />{#if isLimitedSku(wb)}<Tag kind="limited" size="xs" class="self-center" hint="RSI titles this CCU limited" />{/if}{/if}
-                {#each s.ccu.filter((k) => k !== wb) as k (k.id)}<Tag kind="sale" label={`${k.title || 'CCU'} ${usd(k.price)}`} />{#if isLimitedSku(k)}<Tag kind="limited" size="xs" class="self-center" hint="RSI titles this CCU limited" />{/if}{/each}
-                {#each s.standalone.filter((k) => k.available) as k (k.id)}<Tag kind="sale" label={`Standalone ${usd(k.price)}`} />{/each}
+                {#if wb}<span class="inline-flex items-center gap-0.5"><Tag kind="warbond" label={`CCU · Warbond ${usd(wb.price)}${wb.stock != null ? ` · ${wb.stock} left` : ''}`} hint="A warbond CCU to this hull (new money only, no store credit). The price is the hull's value: a CCU costs it minus the ship you upgrade from." /><CcuCartMenu to={s} sku={wb} from={fromFor(s)} {cart} label={`Warbond CCU to ${s.name}`} />{#if isLimitedSku(wb)}<Tag kind="limited" size="xs" class="self-center" hint="RSI titles this CCU limited" />{/if}</span>{/if}
+                {#each s.ccu.filter((k) => k !== wb) as k (k.id)}<span class="inline-flex items-center gap-0.5"><Tag kind="sale" label={`CCU · ${skuWords(k.title) || 'Standard'} ${usd(k.price)}`} hint="A CCU to this hull. The price is the hull's value: a CCU costs it minus the ship you upgrade from." /><CcuCartMenu to={s} sku={k} from={fromFor(s)} {cart} label={`${skuWords(k.title) || 'Standard'} CCU to ${s.name}`} />{#if isLimitedSku(k)}<Tag kind="limited" size="xs" class="self-center" hint="RSI titles this CCU limited" />{/if}</span>{/each}
+                {#each s.standalone.filter((k) => k.available) as k (k.id)}
+                  <span class="inline-flex items-center gap-0.5"><Tag kind="sale" label={`Standalone${k.title && !/^standalone/i.test(k.title) ? ` · ${skuWords(k.title)}` : ''} ${usd(k.price)}`} hint="The ship itself, as a new pledge" /><CartButton state={cart.of(k.id)} inCart={cart.qtyOf(k.id)} onadd={() => addOne(k.id)} name={`${s.name} (${k.title || 'standalone'})`} available={k.available} hint={`Add the ${s.name} standalone (${usd(k.price)}) to your RSI cart (nothing is paid)`} /></span>
+                {/each}
                 {#if limitedIds.has(s.id)}<Tag kind="limited" size="xs" class="self-center" hint="RSI marks the standalone listing time-limited (from Browse)" />{/if}
                 {#if packs.get(s.id)?.length}
                   {@const list = packs.get(s.id)!}
-                  {@const o = list[0]!}
-                  <a href={packHref(o)} class="no-underline" title={packTip(s, list)}>
-                    <Tag kind="sale" label={`${onSale(s) ? 'In' : 'Only in'} ${list.length > 1 ? `${list.length} packs` : 'a pack'}: ${o.share != null && o.share < o.item.discounted ? `≈ ${usd(o.share)}` : usd(o.item.discounted)}`} hint={null} />
-                  </a>
+                  <!-- What you pay: the cheapest pack's own price (the per-hull share is in the tooltip). -->
+                  {@const o = [...list].sort((a, b) => a.item.discounted - b.item.discounted)[0]!}
+                  <span class="inline-flex items-center gap-0.5">
+                    <a href={packHref(o)} class="no-underline" title={packTip(s, list)}>
+                      <Tag kind="sale" label={`${onSale(s) ? 'In' : 'Only in'} ${list.length > 1 ? `${list.length} packs: from` : 'a pack:'} ${usd(o.item.discounted)}`} hint={null} />
+                    </a>
+                    <CartButton state={cart.of(o.item.id)} inCart={cart.qtyOf(o.item.id)} onadd={() => addOne(o.item.id)} name={o.item.name} available={o.item.available} hint={`Add ${list.length > 1 ? 'the cheapest of these packs, ' : ''}${o.item.name} (${usd(o.item.discounted)}), to your RSI cart (nothing is paid)${list.length > 1 ? '. The others: open the tag.' : ''}`} />
+                  </span>
                 {/if}
                 {#if !sold(s)}
                   {@const t = lastSale(sales, s.id)}

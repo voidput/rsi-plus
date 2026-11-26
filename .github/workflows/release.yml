@@ -199,6 +199,28 @@ jobs:
           npx wxt submit --firefox-extension-id rsi-plus@nylegarcia.github.io \
             --firefox-zip "$(ls .output/*-firefox.zip)" --firefox-sources-zip "$(ls .output/*-sources.zip)"
 
+  # Discord post for the new stable release (DISCORD_RELEASE_WEBHOOK_MAIN; skipped when unset), once the zips and
+  # SHA256SUMS are attached. Only when release-please actually cut a release (not when it just opened/updated the PR).
+  # Independent of the store uploads: a Web Store/AMO failure doesn't suppress it, and a Discord failure fails nothing.
+  notify:
+    needs: [release-please, assets, checksums]
+    if: needs.release-please.outputs.release_created == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Notify Discord
+        continue-on-error: true
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_RELEASE_WEBHOOK_MAIN }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.release-please.outputs.tag_name }}
+          SHA: ${{ github.sha }}
+          CHANNEL: stable
+        run: bash scripts/discord-notify.sh
+
   # After a release, merge main back into dev so dev carries the bumped version (.release-please-manifest.json — the
   # prerelease numbering reads it), CHANGELOG.md and the rolled docs/changelog.md. The docs/changelog.md conflict
   # (main rolled Unreleased, dev added to it) is resolved by scripts/backmerge-changelog.mjs; any other conflict opens
