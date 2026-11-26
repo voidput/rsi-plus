@@ -1,11 +1,13 @@
 ---
 title: Changelog
 tags: [changelog]
-updated: 2026-11-25
+updated: 2026-11-26
 ---
 # Changelog
 
 ## Unreleased
+
+## 0.28.0 — 2026-11-26
 - Ship catalog: an add-to-cart button on every offer under *On sale*, plus *Open cart* at the top (added to your RSI cart, nothing is paid). A CCU's button asks which of your ships to upgrade from (cheaper hulls you own, each with what the upgrade costs from it) and RSI checks and prices the pair; a pack shows what the pack costs (*In 3 packs: from $X*, the cheapest; the hull's share of each is in the tooltip) and its button adds that pack. The offers now say what they are: *CCU · Standard $35*, *CCU · Warbond …*, *Standalone · Standard $35*. Fixed: a cart line's price showed in cents.
 - Paints fit the hulls the game itself says. Which ships a paint goes on now comes from the game's own item ports (the sc-gamedata dumps, bundled with RSI+: nothing is fetched), not from reading the paint's name: Paints by ship, My items, Paint rebuy, Buyback and The Impound's *Paints for my ships* all use it. Hornet Mk II paints list the F7A Mk II and every other Mk II variant; 600i paints both 600i hulls. Paints the game data doesn't know still go by their name.
 - Fixed: the F8C Lightning (and its Executive Edition, PYAM Exec and Wikelo specials) showed under *Not matched to a store ship* in My ships: RSI's ship catalog doesn't list it. It is its own hull now at its $300 pledge price, with paints, compare and the fleet export; an F8A Lightning shows as a stand-in from it.
